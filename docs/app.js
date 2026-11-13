@@ -1085,6 +1085,12 @@ window.addEventListener('resize', () => fitHand());
 
 /* ---------- 启动 ---------- */
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch {}
+  });
+}
+
 bindHandPointer();
 
 function bootFromSession() {
