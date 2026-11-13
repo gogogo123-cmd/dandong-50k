@@ -40,6 +40,7 @@ const STATIC = {
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8', cache: 'no-cache' },
   '/assets/joker-big.png': { file: 'assets/joker-big.png', type: 'image/png', cache: 'public, max-age=3600' },
   '/assets/joker-small.png': { file: 'assets/joker-small.png', type: 'image/png', cache: 'public, max-age=3600' },
+  '/a709471779452ad70264b30b139973ed.txt': { file: 'a709471779452ad70264b30b139973ed.txt', type: 'text/plain; charset=utf-8', cache: 'no-cache' },
 };
 
 function send(res, status, data) {
