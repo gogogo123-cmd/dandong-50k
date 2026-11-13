@@ -14,11 +14,13 @@ function serializeRoom(r) {
       hand: p.hand,
       bot: !!p.bot,
       done: !!p.done,
+      ready: !!p.ready,
       tokenHash: p.tokenHash || null,
     } : null)),
     teams: r.teams,
     positions: r.positions,
     playedBy: r.playedBy,
+    passed: r.passed,
     started: r.started,
     turn: r.turn,
     lead: r.lead,
@@ -64,7 +66,7 @@ function createStore({ dataDir, saveDebounceMs }) {
     return JSON.stringify({
       schema: SCHEMA,
       savedAt: Date.now(),
-      rooms: [...rooms.values()].map(serializeRoom),
+      rooms: [...rooms.values()].filter((r) => !r.closed).map(serializeRoom),
     });
   }
 

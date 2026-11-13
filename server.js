@@ -99,7 +99,7 @@ function readBody(req, res, cb) {
   req.on('error', () => {});
 }
 
-const API_ACTIONS = new Set(['create', 'join', 'state', 'start', 'play', 'pass', 'bots', 'next']);
+const API_ACTIONS = new Set(['create', 'join', 'state', 'start', 'play', 'pass', 'bots', 'next', 'ready', 'leave', 'kick', 'dissolve']);
 
 function handleApi(req, res, action) {
   readBody(req, res, (b) => {
@@ -116,7 +116,7 @@ function handleApi(req, res, action) {
       if (action === 'state') {
         return send(res, 200, { state: engine.publicState(r, seat), serverNow: Date.now() });
       }
-      engine.applyAction(r, seat, action, { cards: b.cards });
+      engine.applyAction(r, seat, action, { cards: b.cards, seat: b.seat });
       return send(res, 200, { state: engine.publicState(r, seat) });
     } catch (e) {
       if (e instanceof GameError) return send(res, e.status, { error: e.message, code: e.code });

@@ -5,7 +5,7 @@
   "description": "六人三副牌丹东五十K在线牌桌",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/smoke.test.js"
+    "test": "node --test test/smoke.test.js test/rules.test.js"
   },
   "engines": {
     "node": ">=20"

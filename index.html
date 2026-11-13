@@ -141,4 +141,132 @@ body{overscroll-behavior:none}
 @keyframes pop{from{transform:scale(.94);opacity:.4}to{transform:scale(1);opacity:1}}
 @media(max-width:950px) and (orientation:landscape){.my-timer{font-size:18px}.turn-timer{font-size:11px;min-width:40px}.played-cards .card{width:32px;height:47px;margin-left:-14px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
-</style></head><body><div id="connBanner" class="conn-banner" role="status" aria-live="polite"></div><main class="wrap"><header class="top"><span>DANDONG · 50K</span><span>六人桌 · 三副牌</span></header><section class="hero"><h1>丹东五十K</h1><p>六人组队 · 争分走牌 · 邀请朋友开局</p><div class="actions"><button class="btn primary" id="demo">🤖 5个机器人陪玩</button><button class="btn" id="create">创建真人牌桌</button><button class="btn" id="share" style="display:none">复制房间链接</button></div><div class="notice">进入牌桌前输入昵称。手机会优先切换横屏；无法切换时自动旋转牌桌。手牌按点数和花色排序，选中后可出牌。</div></section><section id="online"><article class="table-panel"><div class="game-top"><div><span class="table-title">六人牌桌</span><span id="roomLabel" class="room-code"></span><span id="setLabel" class="room-code"></span><span id="turnTimer" class="turn-timer" title="当前玩家出牌倒计时"></span></div><div class="scoreboard"><span class="team-score red">🔴 红队 <b id="scoreRed">0</b></span><span class="round-points">本轮 <b id="trickPoints">0</b> 分</span><span class="team-score blue">🔵 蓝队 <b id="scoreBlue">0</b></span><button id="soundToggle" class="mini-btn" type="button" aria-label="声音开关">🔊</button></div></div><div id="roundHistory" class="round-history"></div><div class="felt"><div id="players" class="player-ring"></div><div id="myPlay" class="my-play"></div><div id="trickCenter" class="trick-center"><div id="turnInfo" class="turn-message"></div><div id="played" class="played-cards"></div></div></div><div class="game-controls"><span id="myTimer" class="my-timer" title="你的出牌倒计时"></span><button id="startGame" class="btn primary">开始发牌</button><span id="actionHint" class="action-hint">轮到其他玩家</span><button id="hint" class="btn" type="button" disabled>提示</button><button id="passTurn" class="btn" disabled>不要</button><button id="playCards" class="btn primary" disabled>出牌</button></div><div class="hand-heading"><span>我的手牌</span><span id="handCount" class="muted"></span><span class="sort-label">按点数排列 · 同点按花色排列</span></div><div class="hand-scroll"><div id="myHand" class="hand-row"></div></div><div id="gameLog" class="last-log"></div><div id="roundModal" class="round-modal"><div class="round-box"><h2 id="roundTitle">本小局结束</h2><p id="roundDetail"></p><div id="roundSummary" class="round-summary"></div><button id="nextGame" class="btn primary">开始下一小局</button></div></div></article></section><section id="rules" class="rules"><div class="rule"><b>牌组与分数</b><br>三副牌去掉3、4；5计5分，10、K计10分</div><div class="rule"><b>牌点与顺子</b><br>牌点5至A再到2；顺子可带A，范围5到A，2不进顺子</div><div class="rule"><b>腿</b><br>同花为纯腿，异花为杂腿；纯腿压杂腿</div><div class="rule"><b>王与炸弹</b><br>同色双王压炸弹、顺子、双顺；三王压纯腿；炸弹张数多压张数少</div><div class="rule"><b>得分与胜负</b><br>一轮无人压牌后，最后领牌队拿本轮分牌。小局结束时，未出完手牌中的分牌转给对方；大皇队被抓不扣分，非大皇队每名被抓玩家扣20分。小局总分较高队获胜</div></section></main><div class="join-modal" id="joinModal"><form class="join-box" id="joinForm"><h2 id="modalTitle">进入牌桌</h2><p>输入昵称后进入横屏牌桌。</p><input id="nickname" maxlength="12" autocomplete="nickname" placeholder="你的昵称" required><div class="join-actions"><button type="button" class="btn" id="cancelJoin">取消</button><button type="submit" class="btn primary">进入牌桌</button></div></form></div><div id="toast" style="position:fixed;z-index:100;left:50%;bottom:20px;transform:translateX(-50%);background:#f4e8c9;color:#26342b;padding:10px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none"></div><script src="/app.js" defer></script></body></html>
+
+/* ===== 最终布局覆盖：座位在桌线外、中央记分板/大厅、操作栏显隐 ===== */
+.top-tools{display:flex;align-items:center;gap:8px}
+.felt{width:66%;margin:clamp(44px,6vh,64px) auto 0;overflow:visible;border-radius:120px}
+.player-ring{left:0;right:0;top:0;bottom:0;width:auto;height:auto;overflow:visible}
+.player-seat{width:max-content;max-width:170px;min-height:0;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none;display:block;z-index:3}
+.player-seat.active{box-shadow:none}
+.player-seat.active .avatar{outline:2px solid var(--gold);outline-offset:2px;animation:avatarPulse 1.5s ease-in-out infinite}
+.spot-3{left:50%;top:0;transform:translate(-50%,-100%)}
+.spot-2,.spot-4{top:10%;bottom:auto}
+.spot-1,.spot-5{top:66%;bottom:auto}
+.spot-2,.spot-1{right:0;left:auto;transform:translateX(100%)}
+.spot-4,.spot-5{left:0;right:auto;transform:translateX(-100%)}
+.player-seat .avatar{width:44px;height:44px;flex:0 0 44px;font-size:19px;border-radius:9px;position:relative}
+.player-seat .seat-name{max-width:126px;font-size:12px}
+.seat-meta{padding-left:0;min-height:13px;font-size:9px}
+/* 出牌区：紧贴座位向桌内延伸 */
+.player-play{position:absolute;z-index:7;display:flex;align-items:center;width:max-content;max-width:170px;pointer-events:none}
+.spot-3 .player-play{left:calc(100% + 8px);top:50%;transform:translateY(-50%);justify-content:flex-start}
+.spot-2 .player-play,.spot-1 .player-play{right:calc(100% + 8px);left:auto;top:50%;transform:translateY(-50%);justify-content:flex-end}
+.spot-4 .player-play,.spot-5 .player-play{left:calc(100% + 8px);right:auto;top:50%;transform:translateY(-50%);justify-content:flex-start}
+.player-play .card,.my-play .card{width:34px;height:51px;padding:3px 2px;margin-left:-18px;border-radius:7px;box-shadow:0 3px 8px #00160f77}
+.player-play .card:first-child,.my-play .card:first-child{margin-left:0}
+.player-play .card .rank,.my-play .card .rank{font-size:11px}
+.player-play .card .suit,.my-play .card .suit{font-size:9px}
+.player-play .card .center-suit,.my-play .card .center-suit{font-size:13px;right:3px;bottom:4px;left:auto}
+/* 敌我光圈 */
+.player-play::before,.my-play::before{content:"";position:absolute;inset:-7px -9px;border-radius:14px;z-index:0;pointer-events:none}
+.player-play.play-mate::before,.my-play.play-mate::before{background:radial-gradient(ellipse at center,#5db4e055,transparent 72%);box-shadow:0 0 0 1px #6eaed755}
+.player-play.play-enemy::before,.my-play.play-enemy::before{background:radial-gradient(ellipse at center,#e0585055,transparent 72%);box-shadow:0 0 0 1px #e0585066}
+.player-play .card,.my-play .card{position:relative;z-index:1}
+.pass-pill{display:inline-block;position:relative;z-index:1;padding:4px 11px;border-radius:999px;background:#0a3a2e;border:1px solid #ffffff33;color:#e9d9b0;font-size:11px;font-weight:700;white-space:nowrap}
+.my-play{position:absolute;z-index:7;left:50%;bottom:3%;transform:translateX(-50%);display:none;align-items:center;width:max-content;max-width:38%;pointer-events:none}
+.my-play::before{inset:-7px -9px}
+/* 皇冠 */
+.avatar{position:relative}
+.crown{position:absolute;top:-11px;left:-7px;font-size:14px;line-height:1;z-index:3;transform:rotate(-18deg);filter:drop-shadow(0 1px 2px #000)}
+/* 中央记分板 / 大厅 */
+.trick-center{display:flex;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;flex-direction:column;align-items:center;gap:5px;width:min(74%,470px);max-width:none;pointer-events:none;text-align:center}
+.score-panel{display:flex;flex-direction:column;align-items:center;gap:5px;width:100%}
+.score-line{display:flex;align-items:center;gap:10px;background:#06251ecc;border:1px solid #ffffff1f;border-radius:999px;padding:4px 15px;font-size:12px;white-space:nowrap}
+.score-side b{font-size:17px;margin-left:2px}
+.score-side.red b{color:#ffb38e}.score-side.blue b{color:#9fd4f5}
+.round-points b{color:#f2d392}
+.score-history{display:flex;gap:4px;flex-wrap:wrap;justify-content:center;max-width:100%}
+.trick-center .turn-message{font-size:11px;color:#f3e4bf;background:#06251eaa;padding:3px 10px;border-radius:999px;min-height:0;margin:0}
+.lobby-panel{pointer-events:auto;display:flex;flex-direction:column;gap:5px;width:100%;max-height:100%;overflow:auto;background:#072a22ee;border:1px solid #e9c47a55;border-radius:14px;padding:9px 11px;box-shadow:0 10px 30px #0008}
+.lobby-title{font-weight:800;color:var(--gold);text-align:center;font-size:14px}
+.lobby-count{text-align:center;font-size:11px;color:#b9d0c5}
+.lobby-list{display:grid;grid-template-columns:1fr;gap:3px;max-height:210px;overflow:auto}
+.lobby-row{display:grid;grid-template-columns:50px 1fr auto;align-items:center;gap:8px;background:#ffffff0a;border-radius:7px;padding:4px 8px;font-size:11px}
+.lobby-row.empty{opacity:.45}
+.lobby-row.mine{outline:1px solid #e9c47a66}
+.lobby-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lobby-name i{font-style:normal;color:#a8c3b6;font-size:9px;margin-left:5px}
+.lobby-state{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.lobby-state .ok{color:#7fe0ae}.lobby-state .no{color:#ffb1a8}
+.lobby-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:2px}
+.lobby-actions .btn{padding:7px 14px;font-size:12px;min-height:0;border-radius:9px}
+.lobby-actions .btn:disabled{opacity:.4;cursor:default}
+.lobby-hint{text-align:center;font-size:10px;color:#a8c3b6}
+/* 操作栏：非本人回合保留布局但隐藏 */
+#actionBar{transition:visibility .12s}
+#actionBar .action-hint{display:block!important;font-size:11px;min-width:120px;color:#bdd0c4}
+/* 个人信息 + 手牌一屏放下 */
+.lobby-mode .hand-scroll{display:none}
+.lobby-mode .hand-title,.lobby-mode #handCount,.lobby-mode .sort-label{display:none!important}
+.lobby-mode .hand-heading{min-height:40px}
+.hand-heading{min-height:46px;gap:8px;flex-wrap:nowrap;overflow:hidden}
+.hand-heading .hand-title{font-size:12px;color:#f4e6c3;font-weight:750;white-space:nowrap}
+.my-profile{display:flex;align-items:center;gap:8px;flex:0 0 auto;max-width:46%;overflow:hidden}
+.my-profile .avatar{width:40px;height:40px;flex:0 0 40px;font-size:17px;border-radius:9px}
+.my-profile-text{line-height:1.15;overflow:hidden}
+.my-profile-name{font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#efce8e}
+.my-profile.team-blue .my-profile-name{color:#b8d7ef}
+.my-profile-name i{font-style:normal;font-size:9px;color:#a8c3b6;margin-left:4px;font-weight:400}
+.my-profile-meta{font-size:9px;color:#a8c3b6;white-space:nowrap}
+.hand-scroll{overflow:visible!important;justify-content:center;padding:14px 12px 6px;flex:0 0 auto;min-height:0}
+.hand-row{width:100%;min-width:0;justify-content:center;margin-inline:0;padding-inline:0;overflow:visible}
+.hand-row .card{touch-action:none;-webkit-user-select:none;user-select:none}
+@media(max-width:950px) and (orientation:landscape){
+  .table-panel{padding:env(safe-area-inset-top,3px) 6px env(safe-area-inset-bottom,3px);gap:3px}
+  .game-top{min-height:24px}
+  .felt{width:64%;margin-top:clamp(32px,8vh,40px);border-radius:90px;min-height:118px;max-height:52dvh}
+  .player-seat{max-width:132px}
+  .player-seat .avatar{width:34px;height:34px;flex-basis:34px;font-size:15px;border-radius:7px}
+  .player-seat .seat-name{font-size:10px;max-width:98px}
+  .seat-meta{font-size:8px;min-height:11px}
+  .spot-2,.spot-4{top:8%}.spot-1,.spot-5{top:68%}
+  .player-play{max-width:140px}
+  .player-play .card,.my-play .card{width:27px;height:40px;margin-left:-15px}
+  .player-play .card .rank,.my-play .card .rank{font-size:9px}
+  .player-play .card .suit,.my-play .card .suit{font-size:8px}
+  .player-play .card .center-suit,.my-play .card .center-suit{font-size:11px}
+  .score-line{padding:2px 9px;font-size:9px;gap:7px}
+  .score-side b{font-size:13px}
+  .score-history .result-chip{font-size:8px;padding:2px 5px}
+  .trick-center .turn-message{font-size:9px;padding:2px 7px}
+  .lobby-panel{padding:6px 8px;gap:3px;border-radius:10px}
+  .lobby-title{font-size:11px}.lobby-count{font-size:9px}
+  .lobby-list{max-height:150px;gap:2px}
+  .lobby-row{padding:2px 6px;font-size:9px;grid-template-columns:40px 1fr auto}
+  .lobby-actions .btn{padding:4px 9px;font-size:10px}
+  .lobby-hint{display:none}
+  .hand-heading{min-height:34px}
+  .my-profile .avatar{width:30px;height:30px;flex-basis:30px;font-size:13px}
+  .my-profile-name{font-size:10px}.my-profile-meta{font-size:8px}
+  .hand-scroll{flex:0 0 auto;padding:10px 10px 3px}
+  .hand-row .card{width:44px;height:84px;margin-left:-10px;padding:5px 4px;border-radius:7px}
+  .hand-row .card .rank{font-size:13px;line-height:1.05}
+  .hand-row .card .suit{font-size:11px;margin-top:1px}
+  .hand-row .card .center-suit{font-size:18px;left:6px;bottom:4px}
+  .hand-row .card.selected{transform:translateY(-9px)}
+}
+@media(max-width:900px) and (orientation:portrait){
+  .in-game .felt{width:64%;margin-top:clamp(32px,8vh,40px);border-radius:90px}
+  .in-game .player-ring{left:0;right:0;width:auto}
+  .in-game .spot-3{left:50%;top:0;transform:translate(-50%,-100%)}
+  .in-game .spot-2,.in-game .spot-1{right:0;left:auto;transform:translateX(100%)}
+  .in-game .spot-4,.in-game .spot-5{left:0;right:auto;transform:translateX(-100%)}
+  .in-game .player-seat .avatar{width:34px;height:34px;flex-basis:34px;font-size:15px}
+  .in-game .hand-heading{min-height:34px}
+  .in-game .hand-scroll{flex:0 0 auto;padding:10px 10px 3px}
+  .in-game .hand-row .card{width:44px;height:84px;margin-left:-10px;padding:5px 4px;border-radius:7px}
+  .in-game .hand-row .card .rank{font-size:13px;line-height:1.05}
+  .in-game .hand-row .card .suit{font-size:11px;margin-top:1px}
+  .in-game .hand-row .card .center-suit{font-size:18px;left:6px;bottom:4px}
+}
+</style></head><body><div id="connBanner" class="conn-banner" role="status" aria-live="polite"></div><main class="wrap"><header class="top"><span>DANDONG · 50K</span><span>六人桌 · 三副牌</span></header><section class="hero"><h1>丹东五十K</h1><p>六人组队 · 争分走牌 · 邀请朋友开局</p><div class="actions"><button class="btn primary" id="demo">🤖 5个机器人陪玩</button><button class="btn" id="create">创建真人牌桌</button><button class="btn" id="share" style="display:none">复制房间链接</button></div><div class="notice">进入牌桌前输入昵称。手机会优先切换横屏；无法切换时自动旋转牌桌。手牌按点数和花色排序，选中后可出牌。</div></section><section id="online"><article class="table-panel"><div class="game-top"><div><span class="table-title">六人牌桌</span><span id="roomLabel" class="room-code"></span><span id="setLabel" class="room-code"></span></div><div class="top-tools"><button id="soundToggle" class="mini-btn" type="button" aria-label="声音开关">🔊</button></div></div><div class="felt"><div id="players" class="player-ring"></div><div id="myPlay" class="my-play"></div><div id="trickCenter" class="trick-center"></div></div><div id="actionBar" class="game-controls"><span id="myTimer" class="my-timer" title="你的出牌倒计时"></span><span id="actionHint" class="action-hint">轮到其他玩家</span><button id="hint" class="btn" type="button" disabled>提示</button><button id="passTurn" class="btn" disabled>不要</button><button id="playCards" class="btn primary" disabled>出牌</button></div><div class="hand-heading"><div id="myProfile" class="my-profile"></div><span class="hand-title">我的手牌</span><span id="handCount" class="muted"></span><span class="sort-label">小→大 · 纯腿在右</span></div><div class="hand-scroll"><div id="myHand" class="hand-row"></div></div><div id="gameLog" class="last-log"></div><div id="roundModal" class="round-modal"><div class="round-box"><h2 id="roundTitle">本小局结束</h2><p id="roundDetail"></p><div id="roundSummary" class="round-summary"></div><button id="nextGame" class="btn primary">开始下一小局</button></div></div></article></section><section id="rules" class="rules"><div class="rule"><b>牌组与分数</b><br>三副牌去掉3、4；5计5分，10、K计10分</div><div class="rule"><b>牌点与顺子</b><br>牌点5至A再到2；顺子可带A，范围5到A，2不进顺子</div><div class="rule"><b>腿</b><br>同花为纯腿，异花为杂腿；纯腿压杂腿</div><div class="rule"><b>王与炸弹</b><br>同色双王压炸弹、顺子、双顺；三王压纯腿；炸弹张数多压张数少</div><div class="rule"><b>得分与胜负</b><br>一轮无人压牌后，最后领牌队拿本轮分牌。小局结束时，未出完手牌中的分牌转给对方；大皇队被抓不扣分，非大皇队每名被抓玩家扣20分。小局总分较高队获胜</div></section></main><div class="join-modal" id="joinModal"><form class="join-box" id="joinForm"><h2 id="modalTitle">进入牌桌</h2><p>输入昵称后进入横屏牌桌。</p><input id="nickname" maxlength="12" autocomplete="nickname" placeholder="你的昵称" required><div class="join-actions"><button type="button" class="btn" id="cancelJoin">取消</button><button type="submit" class="btn primary">进入牌桌</button></div></form></div><div id="toast" style="position:fixed;z-index:100;left:50%;bottom:20px;transform:translateX(-50%);background:#f4e8c9;color:#26342b;padding:10px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none"></div><script src="/app.js" defer></script></body></html>

@@ -24,6 +24,7 @@ let pendingAction = null;
 let actionWatchdog = null;
 let hintIndex = -1;
 let hintKey = '';
+let hintBreaks = 0;
 let muted = false;
 let warnedDeadline = null;
 let audioCtx = null;
@@ -140,8 +141,11 @@ function cardHTML(c, selected = false, animate = false) {
   return `<div class="card ${red ? 'red' : ''} ${selected ? 'selected' : ''} ${animate ? 'new-move' : ''}" data-id="${c.id}"><span class="rank">${label}</span><span class="suit">${suitChar(c)}</span><span class="center-suit">${suitChar(c)}</span></div>`;
 }
 
+const SUIT_ASC = { 0: 0, 3: 1, 2: 2, 1: 3 }; // ♣ < ♠ < ♦ < ♥
+
 function arrangeHand(cards) {
   const suitOrder = [1, 3, 0, 2], rest = [...cards], pure = [], mixed = [];
+  const sortCards = (a, b) => a.rank - b.rank || SUIT_ASC[a.suit] - SUIT_ASC[b.suit] || a.id.localeCompare(b.id);
   const remove = (group) => {
     const ids = new Set(group.map((c) => c.id));
     for (let i = rest.length - 1; i >= 0; i--) if (ids.has(rest[i].id)) rest.splice(i, 1);
@@ -161,7 +165,7 @@ function arrangeHand(cards) {
         for (const k of rest.filter((c) => c.rank === 13)) {
           const group = [a, b, k];
           if (new Set(group.map((c) => c.suit)).size < 2) continue;
-          const score = group.map((c) => suitOrder.indexOf(c.suit)).sort((x, y) => x - y).join('');
+          const score = group.map((c) => SUIT_ASC[c.suit]).sort((x, y) => x - y).join('');
           if (!best || score < best.score) best = { group, score };
         }
       }
@@ -170,8 +174,15 @@ function arrangeHand(cards) {
     mixed.push(best.group);
     remove(best.group);
   }
-  rest.sort((a, b) => a.rank - b.rank || suitOrder.indexOf(a.suit) - suitOrder.indexOf(b.suit) || a.id.localeCompare(b.id));
-  return [...rest, ...pure.flat(), ...mixed.flat()];
+  rest.sort(sortCards);
+  pure.sort((a, b) => SUIT_ASC[a[0].suit] - SUIT_ASC[b[0].suit]);
+  mixed.sort((a, b) => {
+    const sa = a.map((c) => SUIT_ASC[c.suit]).sort((x, y) => x - y).join('');
+    const sb = b.map((c) => SUIT_ASC[c.suit]).sort((x, y) => x - y).join('');
+    return sa.localeCompare(sb);
+  });
+  // 普通牌从小到大，杂腿在左、纯腿在右。
+  return [...rest, ...mixed.flat(), ...pure.flat()];
 }
 
 function describe(cards) {
@@ -235,6 +246,20 @@ function canBeat(a, b) {
 
 /* ---------- 提示 ---------- */
 
+function breakCostOf(cards, hand) {
+  const total = new Map();
+  for (const c of hand) total.set(c.rank, (total.get(c.rank) || 0) + 1);
+  const used = new Map();
+  for (const c of cards) used.set(c.rank, (used.get(c.rank) || 0) + 1);
+  let cost = 0;
+  for (const [rank, u] of used) {
+    const t = total.get(rank) || 0;
+    if (t < 2 || u >= t) continue;
+    cost += t === 2 ? 1 : t === 3 ? 3 : 10;
+  }
+  return cost;
+}
+
 function buildHints(s) {
   const hand = s.hand || [];
   const target = s.lead && s.lead.seat !== seat ? s.lead : null;
@@ -247,7 +272,7 @@ function buildHints(s) {
     const type = getType(cs);
     if (!type || !canBeat(type, target)) return;
     seen.add(key);
-    out.push(cs);
+    out.push({ cards: cs, type, breaks: breakCostOf(cs, hand), sum: cs.reduce((x, c) => x + c.rank, 0) });
   };
 
   for (const c of hand) push([c]);
@@ -285,15 +310,12 @@ function buildHints(s) {
   }
   flushSeq();
 
-  out.sort((a, b) => {
-    const ta = getType(a), tb = getType(b);
-    const d = rankPower(ta.kind) - rankPower(tb.kind);
-    if (d) return d;
-    if (ta.n !== tb.n) return ta.n - tb.n;
-    const ap = ta.power ?? 0, bp = tb.power ?? 0;
-    if (ap !== bp) return ap - bp;
-    return a.reduce((x, c) => x + c.rank, 0) - b.reduce((x, c) => x + c.rank, 0);
-  });
+  // 优先不拆对子/三张/炸弹；同代价时先普通牌型、再由小到大。
+  out.sort((a, b) => a.breaks - b.breaks
+    || rankPower(a.type.kind) - rankPower(b.type.kind)
+    || a.type.n - b.type.n
+    || (a.type.power ?? 0) - (b.type.power ?? 0)
+    || a.sum - b.sum);
   return out;
 }
 
@@ -340,6 +362,16 @@ function updateSoundToggle() {
 function applyState(s, serverNow) {
   if (!s) return;
   if (typeof s.version === 'number' && lastVersion >= 0 && s.version < lastVersion) return;
+  if (s.closed) {
+    notice('房间已解散');
+    goHome();
+    return;
+  }
+  if (seat >= 0 && Array.isArray(s.players) && s.players[seat] == null) {
+    notice('你已离开或被移出房间');
+    goHome();
+    return;
+  }
   if (typeof s.serverNow === 'number') serverSkew = s.serverNow - Date.now();
   else if (typeof serverNow === 'number') serverSkew = serverNow - Date.now();
   if (typeof s.version === 'number') lastVersion = s.version;
@@ -353,6 +385,7 @@ function applyState(s, serverNow) {
     lastTurnKey = turnKey;
     hintIndex = -1;
     hintKey = '';
+    hintBreaks = 0;
     if (s.started && !s.finished && s.turn === seat) beep('turn');
   }
   if (s.finished && !lastFinished) beep('end');
@@ -374,85 +407,100 @@ function busy() {
 function render(s) {
   if (!s) return;
   state = s;
+  document.body.classList.toggle('lobby-mode', !s.started);
 
-  $('#scoreRed').textContent = s.scores?.[0] ?? 0;
-  $('#scoreBlue').textContent = s.scores?.[1] ?? 0;
-  $('#trickPoints').textContent = s.trickPoints ?? 0;
   $('#setLabel').textContent = `大局${s.bigSet || 1} · 小局${Math.min((s.gamesPlayed || 0) + 1, 3)}/3`;
-  $('#roundHistory').innerHTML = (s.matchResults || []).map((x) => `<span class="result-chip">第${x.round}局 <b>红 ${x.red} : 蓝 ${x.blue}</b></span>`).join('');
 
   const myTurn = s.started && !s.finished && s.turn === seat;
   const lead = s.lead;
   const target = lead && lead.seat !== seat ? { kind: lead.kind, power: lead.power, n: lead.n } : null;
-  const leadCards = Array.isArray(lead?.cards) ? lead.cards : [];
   const current = s.players?.[s.turn];
 
-  let turnText = s.finished ? '本小局结束' : !s.started ? '等候开局' : myTurn ? '轮到你出牌' : `轮到${current?.name || '玩家'}出牌`;
-  if (myTurn) turnText += target ? ' · 超时自动不要' : ' · 超时自动出最小牌';
+  if (!s.started) {
+    renderLobby(s);
+  } else {
+    let turnText = s.finished ? '本小局结束' : myTurn ? '轮到你出牌' : `轮到${current?.name || '玩家'}出牌`;
+    if (myTurn) turnText += target ? ' · 超时自动不要' : ' · 超时自动出最小牌';
+    const history = (s.matchResults || []).map((x) => `<span class="result-chip">第${x.round}局 <b>红 ${x.red} : 蓝 ${x.blue}</b></span>`).join('');
+    $('#trickCenter').innerHTML = `<div class="score-panel">
+      <div class="score-line"><span class="score-side red">红队 <b>${s.scores?.[0] ?? 0}</b></span><span class="round-points">本轮 <b>${s.trickPoints ?? 0}</b> 分</span><span class="score-side blue">蓝队 <b>${s.scores?.[1] ?? 0}</b></span></div>
+      ${history ? `<div class="score-history">${history}</div>` : ''}
+      <div class="turn-message">${esc(turnText)}</div>
+    </div>`;
+  }
 
-  const sig = playSig(leadCards);
-  const leadAnimate = sig !== lastLeadSig && lastLeadSig !== null;
-  const playedHTML = !s.finished && leadCards.length ? leadCards.map((c) => cardHTML(c, false, leadAnimate)).join('') : '';
-  const summary = s.finished ? '本小局结束' : leadCards.length ? `本轮分牌 ${s.trickPoints || 0} 分` : '等待首手出牌';
-  $('#trickCenter').innerHTML = `<div id="turnInfo" class="turn-message">${esc(turnText)}</div><div id="played" class="played-cards">${playedHTML}</div><div class="trick-summary">${summary}</div>`;
-  lastLeadSig = sig || null;
-
+  const prevSigs = lastPlaySigs || {};
   const newSigs = {};
-  const mySeatSig = playSig(s.players?.[seat]?.lastPlay);
-  newSigs[`me:${seat}`] = mySeatSig;
+  const myTeam = s.players?.[seat]?.team;
   $('#players').innerHTML = (s.players || []).map((p, i) => {
     if (i === seat || !p) return '';
     const rel = ((s.positions?.[i] ?? i) - (s.positions?.[seat] ?? seat) + 6) % 6;
     const active = s.started && !s.finished && s.turn === i;
-    const avatar = p.bot ? '🤖' : esc((p.name || '玩家').slice(0, 1));
+    const crown = s.bigEmperor === i ? '<span class="crown">👑</span>' : '';
+    const avatar = `${crown}${p.bot ? '🤖' : esc((p.name || '玩家').slice(0, 1))}`;
     const count = p.count ?? p.hand?.length ?? 0;
     const psig = playSig(p.lastPlay);
     newSigs[i] = psig;
-    const animate = psig && psig !== lastPlaySigs[i];
+    const animate = psig && psig !== prevSigs[i];
     const online = p.bot ? '' : `<span class="online-dot ${p.online ? '' : 'off'}" title="${p.online ? '在线' : '离线'}"></span>`;
     const host = i === s.hostSeat ? '<span class="host-tag">房主</span>' : '';
-    const meta = p.done
-      ? '已出完'
-      : `${online}${esc(p.team)} · <span class="seat-count">${count}张</span>${active ? ' · 出牌中' : ''}`;
+    const meta = !s.started
+      ? `${online}${esc(p.team)} · ${p.bot ? '机器人' : p.ready ? '已准备' : '未准备'}`
+      : p.done
+        ? '已出完'
+        : `${online}${esc(p.team)} · <span class="seat-count">${count}张</span>${active ? ' · 出牌中' : ''}`;
     const seatTimer = active ? '<span class="seat-timer show">--</span>' : '';
-    return `<div class="player-seat spot-${rel} ${active ? 'active' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}">${seatTimer}<div class="seat-head"><div class="avatar">${avatar}</div><span class="seat-name">${esc(p.name)}${host}</span></div><div class="seat-meta">${meta}</div>${p.lastPlay?.length ? `<div class="player-play">${p.lastPlay.map((c) => cardHTML(c, false, animate)).join('')}</div>` : ''}</div>`;
+    const aura = myTeam && p.team !== myTeam ? 'play-enemy' : 'play-mate';
+    let play = '';
+    if (s.started && !s.finished) {
+      if (s.passed?.[i]) play = `<div class="player-play play-pass ${aura}"><span class="pass-pill">不要</span></div>`;
+      else if (p.lastPlay?.length) play = `<div class="player-play ${aura}">${p.lastPlay.map((c) => cardHTML(c, false, animate)).join('')}</div>`;
+    }
+    return `<div class="player-seat spot-${rel} ${active ? 'active' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}">${seatTimer}<div class="seat-head"><div class="avatar">${avatar}</div><span class="seat-name">${esc(p.name)}${host}</span></div><div class="seat-meta">${meta}</div>${play}</div>`;
   }).join('');
 
   const mine = s.players?.[seat]?.lastPlay;
   const mySig = playSig(mine);
-  const myAnimate = !!mySig && mySig !== lastPlaySigs[`me:${seat}`];
-  $('#myPlay').innerHTML = mine?.length ? mine.map((c) => cardHTML(c, false, myAnimate)).join('') : '';
+  const myPass = s.passed?.[seat];
+  newSigs[`me:${seat}`] = mySig;
+  const myPlayEl = $('#myPlay');
+  if (s.started && !s.finished && (myPass || mine?.length)) {
+    myPlayEl.style.display = 'flex';
+    myPlayEl.className = `my-play play-mate${myPass ? ' play-pass' : ''}`;
+    const myAnimate = !!mySig && mySig !== prevSigs[`me:${seat}`];
+    myPlayEl.innerHTML = myPass ? '<span class="pass-pill">不要</span>' : mine.map((c) => cardHTML(c, false, myAnimate)).join('');
+  } else {
+    myPlayEl.style.display = 'none';
+    myPlayEl.innerHTML = '';
+  }
   lastPlaySigs = newSigs;
 
-  $('#handCount').textContent = `${s.hand.length}张`;
-  const hand = arrangeHand(s.hand);
+  $('#handCount').textContent = `${(s.hand || []).length}张`;
+  const hand = arrangeHand(s.hand || []);
   $('#myHand').innerHTML = hand.map((c) => cardHTML(c, selection.has(c.id))).join('');
-  $('#myHand').querySelectorAll('.card').forEach((el) => {
-    el.onclick = () => {
-      if (busy()) return;
-      const id = el.dataset.id;
-      selection.has(id) ? selection.delete(id) : selection.add(id);
-      render(state);
-    };
-  });
+  fitHand();
 
-  const chosen = s.hand.filter((c) => selection.has(c.id));
+  const chosen = (s.hand || []).filter((c) => selection.has(c.id));
   const type = getType(chosen);
   const canPlayNow = !!(type && canBeat(type, target));
   $('#playCards').disabled = busy() || !myTurn || !canPlayNow;
   $('#passTurn').disabled = busy() || !myTurn || !target;
   $('#hint').disabled = busy() || !myTurn;
 
-  const humanCount = (s.players || []).filter(Boolean).length;
-  const startBtn = $('#startGame');
-  startBtn.style.display = seat >= 0 && !s.started ? 'inline-block' : 'none';
-  startBtn.disabled = busy() || humanCount < 6;
-  startBtn.textContent = humanCount < 6 ? `等待入座 ${humanCount}/6` : '开始发牌';
+  renderProfile(s);
 
   const hintText = !myTurn ? '等待其他玩家'
     : chosen.length ? `已选：${describe(chosen)}${canPlayNow ? ' · 可以出牌' : type ? ' · 压不过上家' : ' · 牌型不成立'}`
     : target ? '选牌压上家，或不要' : '选一手合法牌型';
-  $('#actionHint').textContent = hintText;
+  $('#actionHint').textContent = myTurn && hintBreaks > 0 ? `${hintText} · 需拆牌` : hintText;
+
+  const bar = $('#actionBar');
+  if (!s.started) {
+    bar.style.display = 'none';
+  } else {
+    bar.style.display = '';
+    bar.style.visibility = myTurn ? 'visible' : 'hidden';
+  }
   $('#gameLog').textContent = (s.log || []).slice(-3).join('　·　');
 
   const modal = $('#roundModal');
@@ -479,6 +527,165 @@ function render(s) {
   }
 }
 
+/* ---------- 大厅 / 个人信息 / 手牌排版 ---------- */
+
+function renderLobby(s) {
+  const players = s.players || [];
+  const occupied = players.filter(Boolean).length;
+  const ready = players.filter((p) => p && p.ready).length;
+  const isHost = seat === s.hostSeat;
+  const me = players[seat];
+  const rows = players.map((p, i) => {
+    if (!p) return `<div class="lobby-row empty"><span class="lobby-seat">${i + 1}号位</span><span class="lobby-name">空位</span><span class="lobby-state">—</span></div>`;
+    const tags = [i === seat ? '你' : '', i === s.hostSeat ? '房主' : '', p.bot ? '机器人' : ''].filter(Boolean).join(' · ');
+    const stateText = p.ready ? '<b class="ok">已准备</b>' : '<b class="no">未准备</b>';
+    const kick = isHost && i !== seat && !p.bot && !p.ready
+      ? `<button class="mini-btn" data-lobby="kick" data-seat="${i}" type="button">踢出</button>` : '';
+    return `<div class="lobby-row ${i === seat ? 'mine' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}"><span class="lobby-seat">${i + 1}号位</span><span class="lobby-name">${esc(p.name)}${tags ? `<i>${tags}</i>` : ''}</span><span class="lobby-state">${stateText}${kick}</span></div>`;
+  }).join('');
+  const actions = isHost
+    ? `<button class="btn primary" data-lobby="start" type="button" ${s.canStart ? '' : 'disabled'}>开始游戏</button><button class="btn" data-lobby="dissolve" type="button">解散房间</button>`
+    : `<button class="btn primary" data-lobby="ready" type="button">${me?.ready ? '取消准备' : '准备'}</button><button class="btn" data-lobby="leave" type="button">退出房间</button>`;
+  const hint = isHost
+    ? (s.canStart ? '所有玩家已准备，可以开始' : '等待其他玩家准备')
+    : (me?.ready ? '已准备，等待房主开始' : '准备后等待房主开始');
+  $('#trickCenter').innerHTML = `<div class="lobby-panel">
+    <div class="lobby-title">候场大厅</div>
+    <div class="lobby-count">入座 ${occupied}/6 · 已准备 ${ready}/6</div>
+    <div class="lobby-list">${rows}</div>
+    <div class="lobby-actions">${actions}</div>
+    <div class="lobby-hint">${hint}</div>
+  </div>`;
+}
+
+function renderProfile(s) {
+  const el = $('#myProfile');
+  if (!el) return;
+  const me = s.players?.[seat];
+  if (!me) { el.innerHTML = ''; return; }
+  const crown = s.bigEmperor === seat ? '<span class="crown">👑</span>' : '';
+  const tags = [];
+  if (seat === s.hostSeat) tags.push('房主');
+  if (!s.started) tags.push(me.ready ? '已准备' : '未准备');
+  if (me.done) tags.push('已出完');
+  const teamClass = me.team === '蓝队' ? 'team-blue' : 'team-red';
+  el.className = `my-profile ${teamClass}`;
+  el.innerHTML = `<div class="avatar">${crown}${esc((me.name || '我').slice(0, 1))}</div>
+    <div class="my-profile-text"><div class="my-profile-name">${esc(me.name)}${tags.map((t) => `<i>${t}</i>`).join('')}</div>
+    <div class="my-profile-meta">${esc(me.team)} · ${me.count ?? 0}张</div></div>`;
+}
+
+function fitHand() {
+  const row = $('#myHand');
+  if (!row) return;
+  const cards = [...row.querySelectorAll('.card')];
+  for (const el of cards) el.style.marginLeft = '';
+  if (cards.length < 2) return;
+  const container = row.parentElement;
+  if (!container) return;
+  const cs = getComputedStyle(container);
+  const avail = container.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  const cardW = cards[0].getBoundingClientRect().width
+    || parseFloat(getComputedStyle(cards[0]).width) || 0;
+  if (!avail || !cardW) return;
+  const step = Math.max(14, (avail - cardW) / (cards.length - 1));
+  for (let i = 1; i < cards.length; i++) cards[i].style.marginLeft = `${step - cardW}px`;
+}
+
+function bindHandPointer() {
+  const handEl = $('#myHand');
+  if (!handEl) return;
+  let dragging = false, moved = false, mode = false, startCard = null, lastId = '', startX = 0, startY = 0;
+  const apply = (id, on) => {
+    if (on) selection.add(id); else selection.delete(id);
+    for (const el of handEl.querySelectorAll('.card')) {
+      if (el.dataset.id === id) el.classList.toggle('selected', on);
+    }
+  };
+  handEl.addEventListener('pointerdown', (e) => {
+    if (busy() || !state || !state.started || state.finished) return;
+    const card = e.target.closest('.card');
+    if (!card || !handEl.contains(card)) return;
+    e.preventDefault();
+    dragging = true;
+    moved = false;
+    startCard = card;
+    lastId = card.dataset.id;
+    startX = e.clientX;
+    startY = e.clientY;
+    mode = !selection.has(lastId);
+  });
+  handEl.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    if (!moved) {
+      if (Math.hypot(e.clientX - startX, e.clientY - startY) <= 6) return;
+      moved = true;
+      apply(lastId, mode);
+    }
+    const hit = document.elementFromPoint(e.clientX, e.clientY);
+    const card = hit && hit.closest ? hit.closest('.card') : null;
+    if (!card || !handEl.contains(card)) return;
+    const id = card.dataset.id;
+    if (id === lastId) return;
+    lastId = id;
+    apply(id, mode);
+    e.preventDefault();
+  });
+  const finish = () => {
+    if (!dragging) return;
+    dragging = false;
+    if (!moved && startCard) {
+      const id = startCard.dataset.id;
+      selection.has(id) ? selection.delete(id) : selection.add(id);
+    }
+    hintBreaks = 0;
+    startCard = null;
+    if (state) render(state);
+  };
+  handEl.addEventListener('pointerup', finish);
+  handEl.addEventListener('pointercancel', finish);
+}
+
+function goHome() {
+  try { if (ws) ws.close(); } catch {}
+  ws = null;
+  wsState = 'idle';
+  stopPolling();
+  clearTimeout(wsRetryTimer);
+  wsRetryTimer = null;
+  clearTimeout(connectWatch);
+  clearTimeout(actionWatchdog);
+  pendingAction = null;
+  roomId = '';
+  seat = -1;
+  token = '';
+  selection.clear();
+  state = null;
+  lastVersion = -1;
+  lastLeadSig = null;
+  lastPlaySigs = {};
+  hintIndex = -1;
+  hintKey = '';
+  hintBreaks = 0;
+  lastTurnKey = '';
+  lastFinished = false;
+  clearSession();
+  document.body.classList.remove('in-game');
+  document.body.classList.remove('lobby-mode');
+  const online = $('#online');
+  if (online) online.style.display = 'none';
+  const modal = $('#joinModal');
+  if (modal) modal.style.display = 'none';
+  const round = $('#roundModal');
+  if (round) round.classList.remove('show');
+  const share = $('#share');
+  if (share) share.style.display = 'none';
+  const profile = $('#myProfile');
+  if (profile) profile.innerHTML = '';
+  history.replaceState(null, '', location.pathname + location.search);
+  setBanner('', false, false);
+}
+
 /* ---------- 倒计时 ---------- */
 
 function remainingSeconds() {
@@ -493,9 +700,11 @@ function updateCountdown() {
   const low = show && rem <= 10;
 
   const timer = $('#turnTimer');
-  timer.classList.toggle('show', show);
-  timer.classList.toggle('low', low);
-  if (show) timer.textContent = `⏱ ${sec}s`;
+  if (timer) {
+    timer.classList.toggle('show', show);
+    timer.classList.toggle('low', low);
+    if (show) timer.textContent = `⏱ ${sec}s`;
+  }
 
   const mine = show && state.turn === seat;
   const myTimer = $('#myTimer');
@@ -665,6 +874,16 @@ function connectWS() {
       applyState(m.state, m.serverNow);
       return;
     }
+    if (m.type === 'removed') {
+      notice(m.reason === 'kicked' ? '你已被房主移出房间' : '已退出房间');
+      goHome();
+      return;
+    }
+    if (m.type === 'closed') {
+      notice('房间已解散');
+      goHome();
+      return;
+    }
     if (m.type === 'ack') {
       finishAction(m.requestId, true);
       return;
@@ -750,12 +969,14 @@ async function joinRoom(mode, name) {
       try {
         const b = await api('bots', { room: roomId, token });
         applyState(b.state, b.state.serverNow);
+        const started = await api('start', { room: roomId, token });
+        applyState(started.state, started.state.serverNow);
       } catch (e) {
         notice(e.message);
       }
     }
     connectWS();
-    notice(mode === 'demo' ? '5个机器人已入座' : mode === 'join' ? '已加入牌桌' : '牌桌创建成功');
+    notice(mode === 'demo' ? '5个机器人已准备，开始游戏' : mode === 'join' ? '已加入牌桌' : '牌桌创建成功');
   } catch (e) {
     notice(e.message);
   }
@@ -782,15 +1003,35 @@ $('#joinForm').onsubmit = (e) => {
 };
 
 $('#nextGame').onclick = () => sendAction('next', {}, { clearSelection: true });
-$('#startGame').onclick = () => sendAction('start');
+$('#trickCenter').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-lobby]');
+  if (!btn || btn.disabled) return;
+  const action = btn.dataset.lobby;
+  if (action === 'kick') {
+    if (!confirm('确定踢出该玩家？')) return;
+    sendAction('kick', { seat: Number(btn.dataset.seat) });
+  } else if (action === 'leave') {
+    if (!confirm('确定退出房间？')) return;
+    sendAction('leave');
+  } else if (action === 'dissolve') {
+    if (!confirm('确定解散房间？')) return;
+    sendAction('dissolve');
+  } else if (action === 'ready') {
+    sendAction('ready');
+  } else if (action === 'start') {
+    sendAction('start');
+  }
+});
 $('#playCards').onclick = () => {
   ensureAudio();
   const cards = [...selection];
   if (!cards.length) return;
+  hintBreaks = 0;
   sendAction('play', { cards }, { clearSelection: true });
 };
 $('#passTurn').onclick = () => {
   ensureAudio();
+  hintBreaks = 0;
   sendAction('pass', {}, { clearSelection: true });
 };
 $('#hint').onclick = () => {
@@ -802,14 +1043,18 @@ $('#hint').onclick = () => {
   }
   const hints = buildHints(state);
   if (!hints.length) {
+    hintBreaks = 0;
     notice('没有能压过上家的牌，要不起');
     return;
   }
   const cur = [...selection].sort().join(',');
-  const curIdx = hints.findIndex((cs) => cs.map((c) => c.id).sort().join(',') === cur);
+  const curIdx = hints.findIndex((h) => h.cards.map((c) => c.id).sort().join(',') === cur);
   if (curIdx >= 0) hintIndex = curIdx;
   hintIndex = (hintIndex + 1) % hints.length;
-  selection = new Set(hints[hintIndex].map((c) => c.id));
+  const hint = hints[hintIndex];
+  selection = new Set(hint.cards.map((c) => c.id));
+  hintBreaks = hint.breaks;
+  if (hint.breaks > 0) notice('提示需要拆牌才能压过上家');
   render(state);
 };
 $('#soundToggle').onclick = () => {
@@ -824,13 +1069,17 @@ $('#soundToggle').onclick = () => {
 
 window.addEventListener('online', () => connectWS());
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) connectWS();
+  if (!document.hidden) { connectWS(); fitHand(); }
 });
 window.addEventListener('orientationchange', () => {
   setTimeout(lockLandscape, 300);
+  setTimeout(fitHand, 420);
 });
+window.addEventListener('resize', () => fitHand());
 
 /* ---------- 启动 ---------- */
+
+bindHandPointer();
 
 function bootFromSession() {
   const saved = loadSession();

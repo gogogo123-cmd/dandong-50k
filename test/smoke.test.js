@@ -109,6 +109,14 @@ async function createSix(server) {
   return { room, players };
 }
 
+async function readyAll(server, room, players, skipSeat = 0) {
+  for (const p of players) {
+    if (p.seat === skipSeat) continue;
+    const r = await api(server, 'ready', { room, token: p.token });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+  }
+}
+
 async function waitForState(server, room, token, pred, timeoutMs = 8000) {
   const end = Date.now() + timeoutMs;
   let last = null;
@@ -128,6 +136,7 @@ test('timeout while leading auto-plays the smallest single card', { timeout: 300
   const server = await startServer();
   try {
     const { room, players } = await createSix(server);
+    await readyAll(server, room, players);
     const started = await api(server, 'start', { room, token: players[0].token });
     assert.equal(started.status, 200, JSON.stringify(started.body));
 
@@ -166,6 +175,7 @@ test('timeout while following auto-passes', { timeout: 30000 }, async () => {
   const server = await startServer();
   try {
     const { room, players } = await createSix(server);
+    await readyAll(server, room, players);
     await api(server, 'start', { room, token: players[0].token });
 
     let leader = null;
@@ -202,10 +212,13 @@ test('a full three-round match with bots completes and starts a new big set', { 
     const token = created.body.token;
     const bots = await api(server, 'bots', { room, token });
     assert.equal(bots.status, 200, JSON.stringify(bots.body));
+    assert.equal(bots.body.state.started, false);
+    const started = await api(server, 'start', { room, token });
+    assert.equal(started.status, 200, JSON.stringify(started.body));
 
     const seat = created.body.seat;
     const end = Date.now() + 150000;
-    let s = bots.body.state;
+    let s = started.body.state;
     while (Date.now() < end) {
       s = await getState(server, room, token);
       if (s.finished) {
@@ -251,6 +264,7 @@ test('rooms persist across SIGTERM and restore with the same token', { timeout: 
     room = six.room;
     token = six.players[0].token;
     seat = six.players[0].seat;
+    await readyAll(server, room, six.players);
     await api(server, 'start', { room, token });
 
     let leadToken = token;
@@ -313,6 +327,7 @@ test('WebSocket pushes state to other seats after a REST play', { timeout: 30000
   const server = await startServer();
   try {
     const { room, players } = await createSix(server);
+    await readyAll(server, room, players);
     await api(server, 'start', { room, token: players[0].token });
 
     let turnPlayer = players[0];
@@ -370,6 +385,196 @@ test('WebSocket pushes state to other seats after a REST play', { timeout: 30000
       wsA.close();
       wsB.close();
     }
+  } finally {
+    await stopServer(server);
+  }
+});
+
+test('start requires the host and all non-host players ready', { timeout: 30000 }, async () => {
+  const server = await startServer();
+  try {
+    const { room, players } = await createSix(server);
+
+    const early = await api(server, 'start', { room, token: players[0].token });
+    assert.equal(early.status, 409);
+    assert.equal(early.body.code, 'not-ready');
+
+    const byOther = await api(server, 'start', { room, token: players[2].token });
+    assert.equal(byOther.status, 403);
+    assert.equal(byOther.body.code, 'host-only');
+
+    await readyAll(server, room, players);
+    const ok = await api(server, 'start', { room, token: players[0].token });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal(ok.body.state.started, true);
+  } finally {
+    await stopServer(server);
+  }
+});
+
+test('ready state persists across a restart', { timeout: 30000 }, async () => {
+  const dir = tempDir();
+  let server = await startServer({ dir });
+  let room, token;
+  try {
+    const created = await api(server, 'create', { name: 'Host' });
+    room = created.body.room;
+    token = created.body.token;
+    const ready = await api(server, 'ready', { room, token });
+    assert.equal(ready.status, 200, JSON.stringify(ready.body));
+    assert.equal(ready.body.state.players[0].ready, true);
+
+    await sleep(300);
+    await stopServer(server);
+    server = null;
+
+    server = await startServer({ dir });
+    const restored = await getState(server, room, token);
+    assert.equal(restored.players[0].ready, true);
+    assert.equal(restored.started, false);
+  } finally {
+    if (server) await stopServer(server);
+  }
+});
+
+test('host can kick unready humans only', { timeout: 30000 }, async () => {
+  const server = await startServer();
+  try {
+    const { room, players } = await createSix(server);
+    const host = players[0];
+
+    await api(server, 'ready', { room, token: players[2].token });
+    const readyTarget = await api(server, 'kick', { room, token: host.token, seat: players[2].seat });
+    assert.equal(readyTarget.status, 403);
+
+    const self = await api(server, 'kick', { room, token: host.token, seat: host.seat });
+    assert.equal(self.status, 400);
+    assert.equal(self.body.code, 'bad-target');
+
+    const targetWs = await new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${server.port}/ws`);
+      const timer = setTimeout(() => { try { ws.close(); } catch {}; reject(new Error('hello timeout')); }, 5000);
+      ws.on('open', () => ws.send(JSON.stringify({ type: 'hello', room, token: players[1].token })));
+      ws.on('message', (data) => {
+        const msg = JSON.parse(String(data));
+        if (msg.type === 'hello') {
+          clearTimeout(timer);
+          assert.equal(msg.ok, true);
+          resolve(ws);
+        }
+      });
+      ws.on('error', reject);
+    });
+    const removed = new Promise((resolve) => {
+      targetWs.on('message', (data) => {
+        const msg = JSON.parse(String(data));
+        if (msg.type === 'removed') {
+          // close follows immediately; record the code if available
+          resolve({ reason: msg.reason, code: null });
+        }
+      });
+      targetWs.on('close', (code) => resolve({ reason: 'close', code }));
+    });
+
+    const kicked = await api(server, 'kick', { room, token: host.token, seat: players[1].seat });
+    assert.equal(kicked.status, 200, JSON.stringify(kicked.body));
+    assert.equal(kicked.body.state.players[players[1].seat], null);
+    const msg = await removed;
+    assert.equal(msg.reason, 'kicked');
+
+    const denied = await api(server, 'state', { room, token: players[1].token });
+    assert.equal(denied.status, 401);
+    assert.equal(denied.body.code, 'auth');
+  } finally {
+    await stopServer(server);
+  }
+});
+
+test('leaving frees a seat and transfers or dissolves the host', { timeout: 30000 }, async () => {
+  const server = await startServer();
+  try {
+    const { room, players } = await createSix(server);
+
+    const nonHost = await api(server, 'leave', { room, token: players[1].token });
+    assert.equal(nonHost.status, 200, JSON.stringify(nonHost.body));
+    assert.equal(nonHost.body.state.players[players[1].seat], null);
+
+    const host = await api(server, 'leave', { room, token: players[0].token });
+    assert.equal(host.status, 200, JSON.stringify(host.body));
+    const s = host.body.state;
+    assert.equal(s.players[players[0].seat], null);
+    assert.notEqual(s.hostSeat, players[0].seat);
+    assert.ok(s.players[s.hostSeat], 'host transferred to a remaining human');
+    assert.equal(s.closed, false);
+  } finally {
+    await stopServer(server);
+  }
+});
+
+test('host leaving an all-bot room closes it', { timeout: 30000 }, async () => {
+  const server = await startServer();
+  try {
+    const created = await api(server, 'create', { name: 'Solo' });
+    const room = created.body.room;
+    const token = created.body.token;
+    const bots = await api(server, 'bots', { room, token });
+    assert.equal(bots.status, 200, JSON.stringify(bots.body));
+
+    const left = await api(server, 'leave', { room, token });
+    assert.equal(left.status, 200, JSON.stringify(left.body));
+    assert.equal(left.body.state.closed, true);
+
+    await sleep(1000);
+    const gone = await api(server, 'state', { room, token });
+    assert.equal(gone.status, 404);
+  } finally {
+    await stopServer(server);
+  }
+});
+
+test('host dissolve broadcasts closed and removes the room', { timeout: 30000 }, async () => {
+  const server = await startServer();
+  try {
+    const created = await api(server, 'create', { name: 'Host' });
+    const room = created.body.room;
+    const token = created.body.token;
+    const dissolved = await api(server, 'dissolve', { room, token });
+    assert.equal(dissolved.status, 200, JSON.stringify(dissolved.body));
+    assert.equal(dissolved.body.state.closed, true);
+
+    await sleep(1000);
+    const gone = await api(server, 'state', { room, token });
+    assert.equal(gone.status, 404);
+  } finally {
+    await stopServer(server);
+  }
+});
+
+test('passing marks the seat and the trick award resets marks', { timeout: 30000 }, async () => {
+  const server = await startServer();
+  try {
+    const { room, players } = await createSix(server);
+    await readyAll(server, room, players);
+    await api(server, 'start', { room, token: players[0].token });
+
+    let leader = null;
+    let initial = null;
+    for (const p of players) {
+      const s = await getState(server, room, p.token);
+      if (s.turn === p.seat) {
+        leader = p;
+        initial = s;
+        break;
+      }
+    }
+    assert.ok(leader && initial);
+    const card = smallest(initial.hand);
+    const played = await api(server, 'play', { room, token: leader.token, cards: [card.id] });
+    assert.equal(played.status, 200, JSON.stringify(played.body));
+
+    const s = await waitForState(server, room, leader.token, (st) => (st.passed || []).some(Boolean), 8000);
+    assert.equal(s.passed.length, 6);
+    assert.equal(s.passed.filter(Boolean).length, 1);
   } finally {
     await stopServer(server);
   }

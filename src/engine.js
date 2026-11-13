@@ -35,6 +35,8 @@ function emptyRoom(id) {
     teams: [0, 1, 0, 1, 0, 1],
     positions: [0, 1, 2, 3, 4, 5],
     playedBy: Array(6).fill(null),
+    passed: Array(6).fill(false),
+    closed: false,
     started: false,
     turn: 0,
     lead: null,
@@ -76,7 +78,7 @@ function createEngine({ config, store }) {
   function newPlayer(name, bot = false) {
     const token = bot ? null : crypto.randomBytes(24).toString('base64url');
     return {
-      player: { name, hand: [], bot, done: false, tokenHash: token ? hashToken(token) : null },
+      player: { name, hand: [], bot, done: false, ready: bot, tokenHash: token ? hashToken(token) : null },
       token,
     };
   }
@@ -118,6 +120,11 @@ function createEngine({ config, store }) {
     return Date.now() - (r.lastSeen[seat] || 0) < PRESENCE_MS;
   }
 
+  function canStart(r) {
+    return !r.started && r.players.every(Boolean)
+      && r.players.every((p, i) => p.bot || i === r.hostSeat || p.ready);
+  }
+
   function publicState(r, seat) {
     return {
       id: r.id,
@@ -127,6 +134,7 @@ function createEngine({ config, store }) {
         team: teamName(r, r.teams[i]),
         done: p.done,
         bot: !!p.bot,
+        ready: !!p.ready,
         count: p.hand.length,
         online: isOnline(r, i),
         lastPlay: r.playedBy?.[i] || null,
@@ -136,6 +144,9 @@ function createEngine({ config, store }) {
       turn: r.turn,
       lead: r.lead,
       passes: r.passes,
+      passed: (r.passed || []).slice(),
+      closed: !!r.closed,
+      canStart: canStart(r),
       scores: r.scores,
       trickPoints: r.trickPoints,
       finished: r.finished,
@@ -215,6 +226,67 @@ function createEngine({ config, store }) {
     return { r, seat };
   }
 
+  function clearSeat(r, seat) {
+    r.players[seat] = null;
+    delete r.lastSeen[seat];
+    if (r.passed) r.passed[seat] = false;
+  }
+
+  function transferHost(r, from) {
+    const fromPos = r.positions?.[from] ?? from;
+    for (let step = 1; step <= 6; step++) {
+      const pos = (fromPos + step) % 6;
+      const i = r.positions?.indexOf(pos) ?? pos;
+      if (i >= 0 && i < 6 && r.players[i] && !r.players[i].bot) {
+        r.hostSeat = i;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function closeSeatSockets(r, seat, msg, code) {
+    const set = r.sockets.get(seat);
+    if (!set) return;
+    for (const ws of set) {
+      try { ws.send(JSON.stringify(msg)); } catch {}
+      try { ws.close(code); } catch {}
+    }
+    r.sockets.delete(seat);
+  }
+
+  function hasHuman(r) {
+    return r.players.some((p) => p && !p.bot);
+  }
+
+  function dissolveRoom(r) {
+    r.closed = true;
+    clearTimers(r);
+    r.turnDeadline = null;
+    for (const set of r.sockets.values()) {
+      for (const ws of set) {
+        try { ws.send(JSON.stringify({ type: 'closed' })); } catch {}
+      }
+    }
+    afterMutation(r);
+    const t = setTimeout(() => {
+      rooms.delete(r.id);
+      if (store) store.scheduleSave(rooms);
+    }, 800);
+    if (t.unref) t.unref();
+  }
+
+  function removePlayer(r, seat, reason) {
+    if (!r.players[seat]) return;
+    const wasHost = seat === r.hostSeat;
+    clearSeat(r, seat);
+    if (wasHost) transferHost(r, seat);
+    const gone = !hasHuman(r);
+    closeSeatSockets(r, seat, { type: 'removed', reason }, 4003);
+    if (gone) dissolveRoom(r);
+    else afterMutation(r);
+  }
+
   function applyAction(r, seat, action, payload = {}) {
     const p = r.players[seat];
     if (!p) throw new GameError('auth', '身份验证失败，请重新加入', 401);
@@ -223,7 +295,9 @@ function createEngine({ config, store }) {
 
     if (action === 'start') {
       if (r.started) throw new GameError('started', '牌局已经开始', 409);
+      if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以开始游戏', 403);
       if (r.players.some((x) => !x)) throw new GameError('full', '需要六位玩家全部入座', 409);
+      if (!canStart(r)) throw new GameError('not-ready', '还有玩家未准备', 409);
       startGame(r);
       return afterMutation(r);
     }
@@ -234,13 +308,45 @@ function createEngine({ config, store }) {
       return afterMutation(r);
     }
 
+    if (action === 'ready') {
+      if (r.started) throw new GameError('started', '牌局已经开始', 409);
+      p.ready = !p.ready;
+      return afterMutation(r);
+    }
+
+    if (action === 'leave') {
+      if (r.started) throw new GameError('started', '牌局已开始，无法退出', 409);
+      removePlayer(r, seat, 'left');
+      return r;
+    }
+
+    if (action === 'kick') {
+      if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以踢人', 403);
+      if (r.started) throw new GameError('started', '牌局已经开始了', 409);
+      const target = Number(payload.seat);
+      if (!Number.isInteger(target) || target < 0 || target > 5 || target === seat) {
+        throw new GameError('bad-target', '无效的目标座位', 400);
+      }
+      const tp = r.players[target];
+      if (!tp || tp.bot) throw new GameError('bad-target', '该座位没有可踢出的玩家', 400);
+      if (tp.ready) throw new GameError('bad-target', '已准备的玩家不能踢出', 403);
+      removePlayer(r, target, 'kicked');
+      return r;
+    }
+
+    if (action === 'dissolve') {
+      if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以解散房间', 403);
+      if (r.started) throw new GameError('started', '牌局已经开始', 409);
+      dissolveRoom(r);
+      return r;
+    }
+
     if (action === 'bots') {
       if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以加入机器人', 403);
       if (r.started) throw new GameError('started', '牌局已经开始', 409);
-      for (let i = 1; i < 6; i++) {
+      for (let i = 0; i < 6; i++) {
         if (!r.players[i]) r.players[i] = newPlayer(`机器人${i}`, true).player;
       }
-      startGame(r);
       return afterMutation(r);
     }
 
@@ -394,6 +500,7 @@ function createEngine({ config, store }) {
       hand: Array.isArray(p.hand) ? p.hand.filter(isCard).map((c) => ({ ...c })) : [],
       bot: !!p.bot,
       done: !!p.done,
+      ready: p.ready === undefined ? true : !!p.ready,
       tokenHash: typeof p.tokenHash === 'string' ? p.tokenHash : null,
     } : null));
     const six = (v, dflt) => (Array.isArray(v) && v.length === 6 ? v.slice() : dflt);
@@ -401,6 +508,8 @@ function createEngine({ config, store }) {
     r.positions = six(rec.positions, [0, 1, 2, 3, 4, 5]).map((x) => (Number.isInteger(x) ? x : 0));
     r.playedBy = Array.from({ length: 6 }, (_, i) => (Array.isArray(rec.playedBy?.[i])
       ? rec.playedBy[i].filter(isCard).map((c) => ({ ...c })) : null));
+    r.passed = six(rec.passed, Array(6).fill(false)).map(Boolean);
+    r.closed = false;
     r.started = !!rec.started;
     r.turn = Number.isInteger(rec.turn) && rec.turn >= 0 && rec.turn < 6 ? rec.turn : 0;
     r.lead = rec.lead && typeof rec.lead === 'object' && Array.isArray(rec.lead.cards) ? { ...rec.lead } : null;
