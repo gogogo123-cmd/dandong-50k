@@ -13,5 +13,8 @@
   "packageManager": "npm@10.8.2",
   "dependencies": {
     "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "railway": "^3.17.0"
   }
 }
