@@ -287,6 +287,25 @@ function createEngine({ config, store }) {
     else afterMutation(r);
   }
 
+  // 已开局的机器人房允许真人随时退出：有其他人则转托管给机器人，没有则解散。
+  function leaveStartedRoom(r, seat) {
+    const p = r.players[seat];
+    if (!p) return;
+    const othersHuman = r.players.some((x, i) => x && i !== seat && !x.bot);
+    closeSeatSockets(r, seat, { type: 'removed', reason: 'left' }, 4003);
+    if (!othersHuman) {
+      dissolveRoom(r);
+      return;
+    }
+    p.bot = true;
+    p.tokenHash = null;
+    p.ready = true;
+    delete r.lastSeen[seat];
+    if (seat === r.hostSeat) transferHost(r, seat);
+    r.log.push(`${p.name} 退出，由机器人托管`);
+    afterMutation(r);
+  }
+
   function applyAction(r, seat, action, payload = {}) {
     const p = r.players[seat];
     if (!p) throw new GameError('auth', '身份验证失败，请重新加入', 401);
@@ -315,7 +334,13 @@ function createEngine({ config, store }) {
     }
 
     if (action === 'leave') {
-      if (r.started) throw new GameError('started', '牌局已开始，无法退出', 409);
+      if (r.started) {
+        if (!r.players.some((x) => x && x.bot)) {
+          throw new GameError('started', '牌局已开始，无法退出', 409);
+        }
+        leaveStartedRoom(r, seat);
+        return r;
+      }
       removePlayer(r, seat, 'left');
       return r;
     }

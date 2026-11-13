@@ -406,12 +406,28 @@ function busy() {
   return !!pendingAction;
 }
 
+function cardStackHTML(count) {
+  const n = Math.max(0, Math.min(16, Math.ceil((Number(count) || 0) * 0.7)));
+  if (!n) return '';
+  let layers = '';
+  for (let k = 0; k < n; k++) {
+    layers += `<i style="transform:translate(${(k * 0.6).toFixed(1)}px,${(-k * 1.0).toFixed(1)}px)"></i>`;
+  }
+  return `<span class="card-stack">${layers}</span>`;
+}
+
 function render(s) {
   if (!s) return;
   state = s;
   document.body.classList.toggle('lobby-mode', !s.started);
 
   $('#setLabel').textContent = `大局${s.bigSet || 1} · 小局${Math.min((s.gamesPlayed || 0) + 1, 3)}/3`;
+
+  const leaveBtn = $('#leaveGame');
+  if (leaveBtn) {
+    const botRoom = (s.players || []).some((p) => p && p.bot);
+    leaveBtn.style.display = botRoom ? 'inline-block' : 'none';
+  }
 
   const myTurn = s.started && !s.finished && s.turn === seat;
   const lead = s.lead;
@@ -439,8 +455,9 @@ function render(s) {
     const rel = ((s.positions?.[i] ?? i) - (s.positions?.[seat] ?? seat) + 6) % 6;
     const active = s.started && !s.finished && s.turn === i;
     const crown = s.bigEmperor === i ? '<span class="crown">👑</span>' : '';
-    const avatar = `${crown}${p.bot ? '🤖' : esc((p.name || '玩家').slice(0, 1))}`;
     const count = p.count ?? p.hand?.length ?? 0;
+    const stack = s.started && !p.done ? cardStackHTML(count) : '';
+    const avatar = `${crown}${p.bot ? '🤖' : esc((p.name || '玩家').slice(0, 1))}${stack}`;
     const psig = playSig(p.lastPlay);
     newSigs[i] = psig;
     const animate = psig && psig !== prevSigs[i];
@@ -450,7 +467,7 @@ function render(s) {
       ? `${online}${esc(p.team)} · ${p.bot ? '机器人' : p.ready ? '已准备' : '未准备'}`
       : p.done
         ? '已出完'
-        : `${online}${esc(p.team)} · <span class="seat-count">${count}张</span>${active ? ' · 出牌中' : ''}`;
+        : `${online}${esc(p.team)}${active ? ' · 出牌中' : ''}`;
     const seatTimer = active ? '<span class="seat-timer show">--</span>' : '';
     const aura = myTeam && p.team !== myTeam ? 'play-enemy' : 'play-mate';
     let play = '';
@@ -466,7 +483,7 @@ function render(s) {
   const myPass = s.passed?.[seat];
   newSigs[`me:${seat}`] = mySig;
   const myPlayEl = $('#myPlay');
-  if (s.started && !s.finished && (myPass || mine?.length)) {
+  if (s.started && !s.finished && !myTurn && (myPass || mine?.length)) {
     myPlayEl.style.display = 'flex';
     myPlayEl.className = `my-play play-mate${myPass ? ' play-pass' : ''}`;
     const myAnimate = !!mySig && mySig !== prevSigs[`me:${seat}`];
@@ -590,7 +607,10 @@ function fitHand() {
   const cardW = cards[0].getBoundingClientRect().width
     || parseFloat(getComputedStyle(cards[0]).width) || 0;
   if (!avail || !cardW) return;
-  const step = Math.max(14, (avail - cardW) / (cards.length - 1));
+  // 以满手 23 张为基准固定牌距；牌变少时不重新铺开。
+  const overlap = cardW >= 56 ? 18 : 12;
+  const fitStep = (avail - cardW) / 22;
+  const step = Math.max(8, Math.min(cardW - overlap, fitStep));
   for (let i = 1; i < cards.length; i++) cards[i].style.marginLeft = `${step - cardW}px`;
 }
 
@@ -1062,6 +1082,12 @@ $('#hint').onclick = () => {
   hintBreaks = hint.breaks;
   if (hint.breaks > 0) notice('提示需要拆牌才能压过上家');
   render(state);
+};
+$('#leaveGame').onclick = () => {
+  if (!state) return;
+  const msg = state.started ? '退出房间？剩下的牌会由机器人接管' : '退出房间？';
+  if (!confirm(msg)) return;
+  sendAction('leave');
 };
 $('#soundToggle').onclick = () => {
   muted = !muted;

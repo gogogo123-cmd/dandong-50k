@@ -579,3 +579,57 @@ test('passing marks the seat and the trick award resets marks', { timeout: 30000
     await stopServer(server);
   }
 });
+
+test('leaving a started bot room as the only human dissolves it', { timeout: 30000 }, async () => {
+  const server = await startServer();
+  try {
+    const created = await api(server, 'create', { name: 'Solo' });
+    const room = created.body.room;
+    const token = created.body.token;
+    await api(server, 'bots', { room, token });
+    const started = await api(server, 'start', { room, token });
+    assert.equal(started.status, 200, JSON.stringify(started.body));
+
+    const left = await api(server, 'leave', { room, token });
+    assert.equal(left.status, 200, JSON.stringify(left.body));
+    assert.equal(left.body.state.closed, true);
+
+    await sleep(1000);
+    const gone = await api(server, 'state', { room, token });
+    assert.equal(gone.status, 404);
+  } finally {
+    await stopServer(server);
+  }
+});
+
+test('leaving a started bot room with another human hands the seat to a bot', { timeout: 30000 }, async () => {
+  const server = await startServer();
+  try {
+    const created = await api(server, 'create', { name: 'Host' });
+    const room = created.body.room;
+    const host = created.body.token;
+    const joined = await api(server, 'join', { room, name: 'Other' });
+    assert.equal(joined.status, 200, JSON.stringify(joined.body));
+    const other = joined.body.token;
+    await api(server, 'ready', { room, token: other });
+    await api(server, 'bots', { room, token: host });
+    const started = await api(server, 'start', { room, token: host });
+    assert.equal(started.status, 200, JSON.stringify(started.body));
+
+    const left = await api(server, 'leave', { room, token: host });
+    assert.equal(left.status, 200, JSON.stringify(left.body));
+    const s = left.body.state;
+    assert.equal(s.closed, false);
+    assert.equal(s.players[created.body.seat].bot, true);
+    assert.ok(s.players[joined.body.seat]);
+    assert.equal(s.players[joined.body.seat].bot, false);
+
+    const denied = await api(server, 'state', { room, token: host });
+    assert.equal(denied.status, 401);
+
+    const otherState = await getState(server, room, other);
+    assert.equal(otherState.started, true);
+  } finally {
+    await stopServer(server);
+  }
+});
