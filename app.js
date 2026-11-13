@@ -32,7 +32,9 @@ let lastLeadSig = null;
 let lastPlaySigs = {};
 let connHideTimer = null;
 
-const jokerFaces={small:'/assets/joker-small.png',big:'/assets/joker-big.png'};
+const API_BASE = (window.DANDONG_API_BASE || '').replace(/\/+$/, '');
+const ASSET_PREFIX = window.DANDONG_ASSET_PREFIX || '/assets/';
+const jokerFaces={small:ASSET_PREFIX+'joker-small.png',big:ASSET_PREFIX+'joker-big.png'};
 
 const SESSION_KEY = 'dandong50k-session';
 
@@ -70,7 +72,7 @@ async function api(path, data = {}) {
   const timer = setTimeout(() => ctrl.abort(), 8000);
   let r;
   try {
-    r = await fetch('/api/' + path, {
+    r = await fetch(API_BASE + '/api/' + path, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...data, token: token || data.token }),
@@ -789,6 +791,10 @@ function sendAction(action, extra = {}, meta = {}) {
 /* ---------- WebSocket ---------- */
 
 function wsUrl() {
+  if (API_BASE) {
+    const u = new URL(API_BASE);
+    return (u.protocol === 'https:' ? 'wss://' : 'ws://') + u.host + '/ws';
+  }
   return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
 }
 
@@ -988,7 +994,7 @@ $('#demo').onclick = () => openJoin('demo');
 $('#create').onclick = () => openJoin('create');
 $('#share').onclick = async () => {
   try {
-    await navigator.clipboard.writeText(location.origin + '/#room=' + roomId);
+    await navigator.clipboard.writeText(location.href.split('#')[0] + '#room=' + roomId);
     notice('房间链接已复制');
   } catch {
     notice('复制地址栏链接即可邀请');
