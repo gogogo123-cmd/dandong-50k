@@ -98,17 +98,60 @@ async function api(path, data = {}) {
 
 function openJoin(mode) {
   pending = mode;
-  $('#modalTitle').textContent = mode === 'demo' ? '和5个机器人开局' : mode === 'join' ? '加入牌桌' : '创建牌桌';
+  const isJoin = mode === 'join';
+  $('#modalTitle').textContent = mode === 'demo' ? '和5个机器人开局' : isJoin ? '加入牌桌' : '创建牌桌';
+  $('#modalDesc').textContent = isJoin
+    ? '输入房主发给你的 6 位房间码，再填昵称。'
+    : mode === 'demo' ? '输入昵称，5 个机器人会自动入座。' : '输入昵称后创建牌桌。';
+  const codeInput = $('#roomCode');
+  codeInput.style.display = isJoin ? 'block' : 'none';
+  if (isJoin) codeInput.value = roomId || '';
   $('#joinModal').style.display = 'grid';
-  setTimeout(() => $('#nickname').focus(), 60);
+  setTimeout(() => {
+    if (isJoin && !codeInput.value) codeInput.focus();
+    else $('#nickname').focus();
+  }, 60);
 }
 
 function showGame() {
   document.body.classList.add('in-game');
   $('#online').style.display = 'flex';
-  $('#roomLabel').textContent = '桌号 ' + roomId;
-  $('#share').style.display = 'inline-block';
+  $('#roomLabel').textContent = '房间码 ' + roomId;
   lockLandscape();
+}
+
+function shareBase() {
+  // Railway 域名在微信里会被拦，分享时优先给 GitHub Pages 地址。
+  if (/(^|\.)railway\.app$/.test(location.hostname)) {
+    return 'https://gogogo123-cmd.github.io/dandong-50k/';
+  }
+  return location.href.split('#')[0];
+}
+
+function inviteLink() {
+  return shareBase() + '#room=' + roomId;
+}
+
+async function copyInvite() {
+  if (!roomId) return;
+  const text = inviteLink();
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    notice(`邀请链接已复制 · 房间码 ${roomId}`);
+  } catch {
+    notice(`复制失败，请手动分享房间码 ${roomId}`);
+  }
 }
 
 function lockLandscape() {
@@ -571,6 +614,7 @@ function renderLobby(s) {
   $('#trickCenter').innerHTML = `<div class="lobby-panel">
     <div class="lobby-title">候场大厅</div>
     <div class="lobby-count">入座 ${occupied}/6 · 已准备 ${ready}/6</div>
+    <div class="lobby-code" data-lobby="copy" role="button" title="点击复制邀请链接">房间码 <b>${esc(s.id)}</b> · 点击复制邀请链接</div>
     <div class="lobby-list">${rows}</div>
     <div class="lobby-actions">${actions}</div>
     <div class="lobby-hint">${hint}</div>
@@ -700,8 +744,6 @@ function goHome() {
   if (modal) modal.style.display = 'none';
   const round = $('#roundModal');
   if (round) round.classList.remove('show');
-  const share = $('#share');
-  if (share) share.style.display = 'none';
   const profile = $('#myProfile');
   if (profile) profile.innerHTML = '';
   history.replaceState(null, '', location.pathname + location.search);
@@ -981,6 +1023,7 @@ async function joinRoom(mode, name) {
       r = await api('create', { name });
       roomId = r.room;
     }
+    if (r.room) roomId = r.room;
     seat = r.seat;
     token = r.token;
     lastVersion = -1;
@@ -1005,6 +1048,7 @@ async function joinRoom(mode, name) {
     notice(mode === 'demo' ? '5个机器人已准备，开始游戏' : mode === 'join' ? '已加入牌桌' : '牌桌创建成功');
   } catch (e) {
     notice(e.message);
+    if (mode === 'join') openJoin('join');
   }
 }
 
@@ -1012,18 +1056,24 @@ async function joinRoom(mode, name) {
 
 $('#demo').onclick = () => openJoin('demo');
 $('#create').onclick = () => openJoin('create');
-$('#share').onclick = async () => {
-  try {
-    await navigator.clipboard.writeText(location.href.split('#')[0] + '#room=' + roomId);
-    notice('房间链接已复制');
-  } catch {
-    notice('复制地址栏链接即可邀请');
-  }
-};
+$('#joinRoomOpen').onclick = () => { roomId = ''; openJoin('join'); };
+$('#copyInvite').onclick = () => copyInvite();
 $('#cancelJoin').onclick = () => { $('#joinModal').style.display = 'none'; };
+$('#roomCode').addEventListener('input', (e) => {
+  e.target.value = e.target.value.toUpperCase().replace(/[^0-9A-F]/g, '').slice(0, 6);
+});
 $('#joinForm').onsubmit = (e) => {
   e.preventDefault();
   const name = $('#nickname').value.trim() || '玩家';
+  if (pending === 'join') {
+    const code = ($('#roomCode').value || '').trim().toUpperCase().replace(/[^0-9A-F]/g, '');
+    if (code.length !== 6) {
+      notice('请输入 6 位房间码');
+      $('#roomCode').focus();
+      return;
+    }
+    roomId = code;
+  }
   $('#joinModal').style.display = 'none';
   joinRoom(pending, name);
 };
@@ -1046,6 +1096,8 @@ $('#trickCenter').addEventListener('click', (e) => {
     sendAction('ready');
   } else if (action === 'start') {
     sendAction('start');
+  } else if (action === 'copy') {
+    copyInvite();
   }
 });
 $('#playCards').onclick = () => {
@@ -1098,6 +1150,13 @@ $('#soundToggle').onclick = () => {
     beep('turn');
   }
 };
+
+window.addEventListener('hashchange', () => {
+  const m = location.hash.match(/^#room=([0-9A-Fa-f]{6})$/);
+  if (!m || document.body.classList.contains('in-game')) return;
+  roomId = m[1].toUpperCase();
+  openJoin('join');
+});
 
 window.addEventListener('online', () => connectWS());
 document.addEventListener('visibilitychange', () => {
