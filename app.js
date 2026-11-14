@@ -1158,24 +1158,37 @@ window.addEventListener('hashchange', () => {
   openJoin('join');
 });
 
+function syncViewport() {
+  document.documentElement.style.setProperty('--app-h', `${Math.round(window.innerHeight)}px`);
+  requestAnimationFrame(() => fitHand());
+}
+
+function onViewportChange() {
+  syncViewport();
+  setTimeout(syncViewport, 120);
+  setTimeout(syncViewport, 350);
+  setTimeout(syncViewport, 700);
+}
+
 window.addEventListener('online', () => connectWS());
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { connectWS(); fitHand(); }
+  if (!document.hidden) { connectWS(); syncViewport(); }
 });
 window.addEventListener('orientationchange', () => {
-  setTimeout(lockLandscape, 300);
-  setTimeout(fitHand, 420);
+  onViewportChange();
 });
-window.addEventListener('resize', () => fitHand());
+window.addEventListener('resize', onViewportChange);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', onViewportChange);
 
 /* ---------- 启动 ---------- */
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch {}
+    try { navigator.serviceWorker.register('sw.js?v=14').catch(() => {}); } catch {}
   });
 }
 
+syncViewport();
 bindHandPointer();
 
 function bootFromSession() {

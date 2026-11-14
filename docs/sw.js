@@ -1,5 +1,9 @@
 'use strict';
-// PWA 安装用的最小 Service Worker：不缓存，所有请求直连网络。
+// 导航请求直连网络，确保 PWA 打开的总是最新 HTML。
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
-self.addEventListener('fetch', () => {});
+self.addEventListener('fetch', (event) => {
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }).catch(() => fetch(event.request)));
+  }
+});
