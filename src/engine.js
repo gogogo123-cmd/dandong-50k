@@ -328,6 +328,9 @@ function createEngine({ config, store }) {
 
     if (action === 'next') {
       if (!r.finished) throw new GameError('finished', '本小局尚未结束', 409);
+      if (r.gamesPlayed >= 3 && seat !== r.hostSeat) {
+        throw new GameError('host-only', '三小局已结束，等待房主重新分组', 403);
+      }
       nextGame(r);
       return afterMutation(r);
     }

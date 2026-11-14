@@ -10,6 +10,8 @@ function beats(a,b){if(!a)return false;if(!b)return true;if(a.kind!==b.kind){if(
 function teamName(room,team){return team===0?'红队':'蓝队';}
 // 座位即位置：1/3/5 号位为红队，2/4/6 号位为蓝队；选座即选队友/对手。
 function assignTeams(r){r.positions=[0,1,2,3,4,5];r.teams=[0,1,0,1,0,1];let red=r.teams.flatMap((t,i)=>t===0?[i+1]:[]),blue=r.teams.flatMap((t,i)=>t===1?[i+1]:[]);r.log.push(`按座位分队：红队 ${red.join('、')}号位；蓝队 ${blue.join('、')}号位`);}
+// 每 3 小局后由房主触发随机分队：座位不变，红蓝队系统随机（各 3 人）。
+function regroupTeams(r){let teams=[0,0,0,1,1,1];for(let i=teams.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[teams[i],teams[j]]=[teams[j],teams[i]];}r.positions=[0,1,2,3,4,5];r.teams=teams;let red=r.teams.flatMap((t,i)=>t===0?[i+1]:[]),blue=r.teams.flatMap((t,i)=>t===1?[i+1]:[]);r.log.push(`随机分组：红队 ${red.join('、')}号位；蓝队 ${blue.join('、')}号位`);}
 function nextActive(r,from){let fromPos=r.positions?.[from]??from;for(let step=1;step<=6;step++){let pos=(fromPos+step)%6,i=r.positions?.indexOf(pos)??pos;if(!r.players[i].done){r.turn=i;return;}}r.finished=true;}
 // 接风：领出者已出完时，由顺时针下一位仍在场的同队玩家领出；找不到则按正常顺位。
 function nextTeammate(r,leader){let fromPos=r.positions?.[leader]??leader;for(let step=1;step<=6;step++){let pos=(fromPos+step)%6,i=r.positions?.indexOf(pos)??pos;if(i!==leader&&r.teams[i]===r.teams[leader]&&!r.players[i].done){r.turn=i;r.windSeq=(r.windSeq||0)+1;r.lastWind={seat:i,leader,seq:r.windSeq};r.log.push(`接风：${r.players[i].name} 接手出牌`);return true;}}return false;}
@@ -20,7 +22,7 @@ function finishCard(r,seat,cards){let p=r.players[seat];p.hand=p.hand.filter(c=>
 function passTurn(r,seat,name){if(!r.lead)throw Error('当前没有上家牌，不能不要');if(!r.passed)r.passed=Array(6).fill(false);r.passed[seat]=true;r.passes++;r.log.push(`${name} 不要`);if(r.passes>=r.lead.responders){let leader=r.lead.seat;awardTrick(r);r.lead=null;r.passes=0;r.playedBy=Array(6).fill(null);if(!r.players[leader].done)r.turn=leader;else if(!nextTeammate(r,leader))nextActive(r,leader);r.log.push('一轮无人压牌，领牌队得分');}else nextActive(r,seat);}
 function startHand(r){let cards=deck();for(let i=cards.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[cards[i],cards[j]]=[cards[j],cards[i]];}r.players.forEach((p,i)=>{p.hand=cards.slice(i*23,(i+1)*23);p.done=false;});r.started=true;let previousEmperor=r.bigEmperor;r.turn=r.gamesPlayed===0?Math.floor(cards.findIndex(c=>c.rank===6&&c.suit===1)/23):(previousEmperor??0);r.lead=null;r.passes=0;r.passed=Array(6).fill(false);r.finished=false;r.roundWinner=null;r.leftoverPoints=0;r.penalty=0;r.trickPoints=0;r.playedBy=Array(6).fill(null);r.scores=[0,0];r.bigEmperor=null;r.log.push(r.gamesPlayed===0?'首局由持红桃6的玩家先出牌':`本局由上一局大皇（${r.players[r.turn].name}）先出牌`);r.log.push(`第${r.gamesPlayed+1}小局发牌完成`);}
 function startGame(r){assignTeams(r);r.gamesPlayed=0;r.bigSet=1;r.matchResults=[];r.bigEmperor=null;startHand(r);}
-function nextGame(r){if(!r.finished)throw Error('本小局尚未结束');if(r.gamesPlayed>=3){r.bigSet++;r.gamesPlayed=0;r.matchResults=[];assignTeams(r);}startHand(r);}
+function nextGame(r){if(!r.finished)throw Error('本小局尚未结束');if(r.gamesPlayed>=3){r.bigSet++;r.gamesPlayed=0;r.matchResults=[];regroupTeams(r);}startHand(r);}
 const STRONG_KINDS = new Set(['bomb', 'mixedLeg', 'pureLeg', 'king2', 'king3']);
 
 function cardPoints(cards) {
@@ -147,4 +149,4 @@ function botAct(r) {
   passTurn(r, seat, p.name);
 }
 
-module.exports = { deck, classify, trump, beats, teamName, assignTeams, nextActive, awardTrick, completeRound, checkRoundEnd, finishCard, passTurn, startHand, startGame, nextGame, botAct };
+module.exports = { deck, classify, trump, beats, teamName, assignTeams, regroupTeams, nextActive, awardTrick, completeRound, checkRoundEnd, finishCard, passTurn, startHand, startGame, nextGame, botAct };

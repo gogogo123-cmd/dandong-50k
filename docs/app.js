@@ -707,9 +707,13 @@ function render(s) {
       }).join('')
       : '<div class="reveal-none">所有玩家均已出完</div>';
     const nextBtn = $('#nextGame');
+    const bigDone = (s.gamesPlayed || 0) >= 3;
+    const hostNow = seat === s.hostSeat;
     nextBtn.style.display = 'inline-block';
-    nextBtn.disabled = busy();
-    nextBtn.textContent = (s.gamesPlayed || 0) >= 3 ? '重新分组，开始新大局' : `开始第${(s.gamesPlayed || 0) + 1}小局`;
+    nextBtn.disabled = busy() || (bigDone && !hostNow);
+    nextBtn.textContent = bigDone
+      ? (hostNow ? '随机分组，开始新大局' : '等待房主随机分组')
+      : `开始第${(s.gamesPlayed || 0) + 1}小局`;
   }
 }
 
@@ -1370,7 +1374,7 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', onVi
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    try { navigator.serviceWorker.register('sw.js?v=19').catch(() => {}); } catch {}
+    try { navigator.serviceWorker.register('sw.js?v=20').catch(() => {}); } catch {}
   });
 }
 
