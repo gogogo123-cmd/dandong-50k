@@ -50,6 +50,15 @@ const notice = (m) => {
   notice.timer = setTimeout(() => { t.style.opacity = 0; }, 2200);
 };
 
+function myNotice(m) {
+  const el = $('#myNotice');
+  if (!el) { notice(m); return; }
+  el.textContent = m;
+  el.classList.add('show');
+  clearTimeout(myNotice.timer);
+  myNotice.timer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
 function saveSession() {
   if (!roomId || !token) return;
   try { localStorage.setItem(SESSION_KEY, JSON.stringify({ room: roomId, seat, token })); } catch {}
@@ -177,13 +186,17 @@ function suitChar(c) {
   return c.rank >= 16 ? (c.rank === 17 ? '★' : '✦') : ['♠', '♥', '♣', '♦'][c.suit];
 }
 
+const CARD_SUIT_KEY = { 0: 's', 1: 'h', 2: 'c', 3: 'd' };
+const CARD_RANK_KEY = { 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10', 11: '11', 12: '12', 13: '13', 14: '14', 15: '15' };
+const CARD_RANK_LABEL = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: '2' };
+
 function cardHTML(c, selected = false, animate = false) {
   if (c.rank >= 16) {
     return `<div class="card joker-face ${selected ? 'selected' : ''} ${animate ? 'new-move' : ''}" data-id="${c.id}"><img class="joker-art" src="${c.rank === 17 ? jokerFaces.big : jokerFaces.small}" alt="${c.rank === 17 ? '大王' : '小王'}"></div>`;
   }
-  const red = c.suit === 1 || c.suit === 3;
-  const label = ({ 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: '2' })[c.rank] || c.rank;
-  return `<div class="card ${red ? 'red' : ''} ${selected ? 'selected' : ''} ${animate ? 'new-move' : ''}" data-id="${c.id}"><span class="rank">${label}</span><span class="suit">${suitChar(c)}</span><span class="center-suit">${suitChar(c)}</span></div>`;
+  const src = `${ASSET_PREFIX}card-${CARD_SUIT_KEY[c.suit]}-${CARD_RANK_KEY[c.rank]}.jpg`;
+  const label = CARD_RANK_LABEL[c.rank] || c.rank;
+  return `<div class="card card-face ${selected ? 'selected' : ''} ${animate ? 'new-move' : ''}" data-id="${c.id}"><img class="card-img" src="${src}" alt="${label}${suitChar(c)}" draggable="false"></div>`;
 }
 
 const SUIT_ASC = { 0: 0, 3: 1, 2: 2, 1: 3 }; // ♣ < ♠ < ♦ < ♥
@@ -508,44 +521,50 @@ function render(s) {
   const newSigs = {};
   const myTeam = s.players?.[seat]?.team;
   $('#players').innerHTML = (s.players || []).map((p, i) => {
-    if (i === seat || !p) return '';
-    const rel = ((s.positions?.[i] ?? i) - (s.positions?.[seat] ?? seat) + 6) % 6;
+    if (!p) return '';
+    const isMe = i === seat;
+    if (!s.started && isMe) return '';
+    const rel = isMe ? 0 : ((s.positions?.[i] ?? i) - (s.positions?.[seat] ?? seat) + 6) % 6;
     const active = s.started && !s.finished && s.turn === i;
     const crown = s.bigEmperor === i ? '<span class="crown">👑</span>' : '';
     const count = p.count ?? p.hand?.length ?? 0;
-    const stack = s.started && !p.done ? cardStackHTML(count) : '';
+    const stack = s.started && !p.done && !isMe ? cardStackHTML(count) : '';
     const avatar = `${crown}${p.bot ? '🤖' : esc((p.name || '玩家').slice(0, 1))}${stack}`;
     const psig = playSig(p.lastPlay);
     newSigs[i] = psig;
     const animate = psig && psig !== prevSigs[i];
     const online = p.bot ? '' : `<span class="online-dot ${p.online ? '' : 'off'}" title="${p.online ? '在线' : '离线'}"></span>`;
     const host = i === s.hostSeat ? '<span class="host-tag">房主</span>' : '';
-    const meta = !s.started
-      ? `${online}${esc(p.team)} · ${p.bot ? '机器人' : p.ready ? '已准备' : '未准备'}`
-      : p.done
-        ? '已出完'
-        : `${online}${esc(p.team)}${active ? ' · 出牌中' : ''}`;
-    const seatTimer = active ? '<span class="seat-timer show">--</span>' : '';
+    let meta;
+    if (isMe) meta = `你 · ${esc(p.team)}${active ? ' · 出牌中' : ''}`;
+    else if (!s.started) meta = `${online}${esc(p.team)} · ${p.bot ? '机器人' : p.ready ? '已准备' : '未准备'}`;
+    else if (p.done) meta = '已出完';
+    else meta = `${online}${esc(p.team)}${active ? ' · 出牌中' : ''}`;
     const aura = myTeam && p.team !== myTeam ? 'play-enemy' : 'play-mate';
     let play = '';
-    if (s.started && !s.finished) {
+    if (s.started && !s.finished && !isMe) {
+      const timer = active ? '<span class="seat-timer show play-timer">--</span>' : '';
       if (p.done) play = `<div class="player-play play-done ${aura}"><span class="pass-pill done-pill">已出完</span></div>`;
-      else if (s.passed?.[i]) play = `<div class="player-play play-pass ${aura}"><span class="pass-pill">不要</span></div>`;
-      else if (p.lastPlay?.length) play = `<div class="player-play ${aura}">${p.lastPlay.map((c) => cardHTML(c, false, animate)).join('')}</div>`;
+      else if (s.passed?.[i]) play = `<div class="player-play play-pass ${aura}">${timer}<span class="pass-pill">不要</span></div>`;
+      else if (p.lastPlay?.length) play = `<div class="player-play ${aura}">${timer}${p.lastPlay.map((c) => cardHTML(c, false, animate)).join('')}</div>`;
+      else if (active) play = `<div class="player-play play-turn ${aura}">${timer}</div>`;
     }
-    return `<div class="player-seat spot-${rel} ${active ? 'active' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}">${seatTimer}<div class="seat-head"><div class="avatar">${avatar}</div><span class="seat-name">${esc(p.name)}${host}</span></div><div class="seat-meta">${meta}</div>${play}</div>`;
+    return `<div class="player-seat spot-${rel} ${active ? 'active' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}${isMe ? ' is-me' : ''}"><div class="seat-head"><div class="avatar">${avatar}</div><span class="seat-name">${esc(p.name)}${host}</span></div><div class="seat-meta">${meta}</div>${play}</div>`;
   }).join('');
 
   const mine = s.players?.[seat]?.lastPlay;
   const mySig = playSig(mine);
   const myPass = s.passed?.[seat];
+  const myDone = !!s.players?.[seat]?.done;
   newSigs[`me:${seat}`] = mySig;
   const myPlayEl = $('#myPlay');
-  if (s.started && !s.finished && !myTurn && (myPass || mine?.length)) {
+  if (s.started && !s.finished && !myTurn && (myDone || myPass || mine?.length)) {
     myPlayEl.style.display = 'flex';
-    myPlayEl.className = `my-play play-mate${myPass ? ' play-pass' : ''}`;
+    myPlayEl.className = `my-play play-mate${myDone ? ' play-done' : myPass ? ' play-pass' : ''}`;
     const myAnimate = !!mySig && mySig !== prevSigs[`me:${seat}`];
-    myPlayEl.innerHTML = myPass ? '<span class="pass-pill">不要</span>' : mine.map((c) => cardHTML(c, false, myAnimate)).join('');
+    myPlayEl.innerHTML = myDone
+      ? '<span class="pass-pill done-pill">已出完</span>'
+      : myPass ? '<span class="pass-pill">不要</span>' : mine.map((c) => cardHTML(c, false, myAnimate)).join('');
   } else {
     myPlayEl.style.display = 'none';
     myPlayEl.innerHTML = '';
@@ -636,21 +655,11 @@ function renderLobby(s) {
   </div>`;
 }
 
-function renderProfile(s) {
+function renderProfile() {
   const el = $('#myProfile');
   if (!el) return;
-  const me = s.players?.[seat];
-  if (!me) { el.innerHTML = ''; return; }
-  const crown = s.bigEmperor === seat ? '<span class="crown">👑</span>' : '';
-  const tags = [];
-  if (seat === s.hostSeat) tags.push('房主');
-  if (!s.started) tags.push(me.ready ? '已准备' : '未准备');
-  if (me.done) tags.push('已出完');
-  const teamClass = me.team === '蓝队' ? 'team-blue' : 'team-red';
-  el.className = `my-profile ${teamClass}`;
-  el.innerHTML = `<div class="avatar">${crown}${esc((me.name || '我').slice(0, 1))}</div>
-    <div class="my-profile-text"><div class="my-profile-name">${esc(me.name)}${tags.map((t) => `<i>${t}</i>`).join('')}</div>
-    <div class="my-profile-meta">${esc(me.team)} · ${me.count ?? 0}张</div></div>`;
+  el.style.display = 'none';
+  el.innerHTML = '';
 }
 
 function fitHand() {
@@ -1060,7 +1069,6 @@ async function joinRoom(mode, name) {
       }
     }
     connectWS();
-    notice(mode === 'demo' ? '5个机器人已准备，开始游戏' : mode === 'join' ? '已加入牌桌' : '牌桌创建成功');
   } catch (e) {
     notice(e.message);
     if (mode === 'join') openJoin('join');
@@ -1137,7 +1145,7 @@ $('#hint').onclick = () => {
   const hints = buildHints(state);
   if (!hints.length) {
     hintBreaks = 0;
-    notice('没有能压过上家的牌，要不起');
+    myNotice('没有能压过上家的牌，要不起');
     return;
   }
   const cur = [...selection].sort().join(',');
@@ -1147,7 +1155,7 @@ $('#hint').onclick = () => {
   const hint = hints[hintIndex];
   selection = new Set(hint.cards.map((c) => c.id));
   hintBreaks = hint.breaks;
-  if (hint.breaks > 0) notice('提示需要拆牌才能压过上家');
+  if (hint.breaks > 0) myNotice('提示需要拆牌才能压过上家');
   render(state);
 };
 $('#leaveGame').onclick = () => {
@@ -1199,7 +1207,7 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', onVi
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    try { navigator.serviceWorker.register('sw.js?v=14').catch(() => {}); } catch {}
+    try { navigator.serviceWorker.register('sw.js?v=15').catch(() => {}); } catch {}
   });
 }
 

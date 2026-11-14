@@ -169,8 +169,9 @@ function handle(req, res) {
     return serveStatic(req, res, staticEntry);
   }
 
-  if (req.method === 'GET' && /^\/assets\/[a-z0-9-]+\.png$/.test(u.pathname)) {
-    const entry = { file: u.pathname.slice(1), type: 'image/png', cache: 'public, max-age=3600' };
+  if (req.method === 'GET' && /^\/assets\/[a-z0-9-]+\.(png|jpg)$/.test(u.pathname)) {
+    const type = u.pathname.endsWith('.jpg') ? 'image/jpeg' : 'image/png';
+    const entry = { file: u.pathname.slice(1), type, cache: 'public, max-age=86400' };
     return serveStatic(req, res, entry);
   }
 
