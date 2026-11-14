@@ -892,7 +892,7 @@ function connectWS() {
   wsRetryTimer = null;
   clearTimeout(connectWatch);
   wsState = 'connecting';
-  setBanner('连接中…', false, false);
+  setBanner('', false, false);
 
   let sock;
   try {
@@ -931,7 +931,7 @@ function connectWS() {
         stopPolling();
         lastVersion = -1;
         applyState(m.state, m.serverNow);
-        setBanner('已连接 · 实时同步', false, true);
+        setBanner('', false, false);
       } else {
         handleAuthFailure(new Error(m.message || '身份验证失败，请重新加入'));
       }
