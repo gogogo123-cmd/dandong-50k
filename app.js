@@ -300,7 +300,21 @@ function breakCostOf(cards, hand) {
   for (const [rank, u] of used) {
     const t = total.get(rank) || 0;
     if (t < 2 || u >= t) continue;
-    cost += t === 2 ? 1 : t === 3 ? 3 : 10;
+    if (rank >= 16) cost += 10; // 双王/三王
+    else if (t >= 3) cost += 10; // 炸弹
+    else cost += 1; // 对子
+  }
+  // 五十K：不要拆开完整的纯腿/杂腿
+  for (let suit = 0; suit < 4; suit++) {
+    const has = [5, 10, 13].every((r) => hand.some((c) => c.rank === r && c.suit === suit));
+    if (!has) continue;
+    const usedInSuit = cards.filter((c) => c.suit === suit && (c.rank === 5 || c.rank === 10 || c.rank === 13)).length;
+    if (usedInSuit > 0 && usedInSuit < 3) cost += 10;
+  }
+  const hasMixed = [5, 10, 13].every((r) => (total.get(r) || 0) > 0);
+  if (hasMixed) {
+    const usedRanks = [5, 10, 13].filter((r) => (used.get(r) || 0) > 0).length;
+    if (usedRanks > 0 && usedRanks < 3) cost += 5;
   }
   return cost;
 }
@@ -515,7 +529,8 @@ function render(s) {
     const aura = myTeam && p.team !== myTeam ? 'play-enemy' : 'play-mate';
     let play = '';
     if (s.started && !s.finished) {
-      if (s.passed?.[i]) play = `<div class="player-play play-pass ${aura}"><span class="pass-pill">不要</span></div>`;
+      if (p.done) play = `<div class="player-play play-done ${aura}"><span class="pass-pill done-pill">已出完</span></div>`;
+      else if (s.passed?.[i]) play = `<div class="player-play play-pass ${aura}"><span class="pass-pill">不要</span></div>`;
       else if (p.lastPlay?.length) play = `<div class="player-play ${aura}">${p.lastPlay.map((c) => cardHTML(c, false, animate)).join('')}</div>`;
     }
     return `<div class="player-seat spot-${rel} ${active ? 'active' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}">${seatTimer}<div class="seat-head"><div class="avatar">${avatar}</div><span class="seat-name">${esc(p.name)}${host}</span></div><div class="seat-meta">${meta}</div>${play}</div>`;
