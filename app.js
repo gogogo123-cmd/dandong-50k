@@ -511,7 +511,9 @@ function checkWind(s) {
     clearTimeout(checkWind.timer);
     checkWind.timer = setTimeout(() => el.classList.remove('show'), 2400);
   }
-  const seatEl = document.querySelector(`#players .player-seat[data-seat="${wind.seat}"]`);
+  const seatEl = wind.seat === seat
+    ? $('#mySeat')
+    : document.querySelector(`#players .player-seat[data-seat="${wind.seat}"]`);
   if (seatEl) {
     seatEl.classList.add('wind-hit');
     setTimeout(() => seatEl.classList.remove('wind-hit'), 1800);
@@ -577,7 +579,7 @@ function render(s) {
   $('#players').innerHTML = (s.players || []).map((p, i) => {
     if (!p) return '';
     const isMe = i === seat;
-    if (!s.started && isMe) return '';
+    if (isMe) return '';
     const rel = isMe ? 0 : ((s.positions?.[i] ?? i) - (s.positions?.[seat] ?? seat) + 6) % 6;
     const active = s.started && !s.finished && s.turn === i;
     const crown = s.bigEmperor === i ? '<span class="crown">👑</span>' : '';
@@ -628,6 +630,22 @@ function render(s) {
   }
   lastPlaySigs = newSigs;
 
+  // 自己的头像固定在自己的操作行、倒计时左侧。
+  const meP = s.players?.[seat];
+  const mySeatEl = $('#mySeat');
+  if (mySeatEl) {
+    const showMe = s.started && !s.finished && meP;
+    mySeatEl.style.display = showMe ? 'flex' : 'none';
+    if (showMe) {
+      const crownMe = s.bigEmperor === seat ? '<span class="crown">👑</span>' : '';
+      mySeatEl.className = `my-seat ${meP.team === '蓝队' ? 'team-blue' : 'team-red'}${myTurn ? ' active' : ''}${meP.done ? ' done' : ''}`;
+      mySeatEl.innerHTML = `<div class="avatar">${crownMe}${esc((meP.name || '我').slice(0, 1))}</div>`;
+      mySeatEl.title = `${meP.name || '我'} · ${meP.team}`;
+    } else {
+      mySeatEl.innerHTML = '';
+    }
+  }
+
   const hand = arrangeHand(s.hand || []);
   const handKey = `${hand.map((c) => c.id).join(',')}|${[...selection].sort().join(',')}`;
   if (handKey !== lastHandKey) {
@@ -653,9 +671,10 @@ function render(s) {
   const bar = $('#actionBar');
   if (!s.started) {
     bar.style.display = 'none';
+    bar.classList.remove('turn-on');
   } else {
     bar.style.display = '';
-    bar.style.visibility = myTurn ? 'visible' : 'hidden';
+    bar.classList.toggle('turn-on', myTurn);
   }
   $('#gameLog').textContent = (s.log || []).slice(-3).join('　·　');
 
@@ -1351,7 +1370,7 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', onVi
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    try { navigator.serviceWorker.register('sw.js?v=17').catch(() => {}); } catch {}
+    try { navigator.serviceWorker.register('sw.js?v=18').catch(() => {}); } catch {}
   });
 }
 
