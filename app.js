@@ -1370,7 +1370,7 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', onVi
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    try { navigator.serviceWorker.register('sw.js?v=18').catch(() => {}); } catch {}
+    try { navigator.serviceWorker.register('sw.js?v=19').catch(() => {}); } catch {}
   });
 }
 
