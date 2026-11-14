@@ -495,8 +495,12 @@ function render(s) {
 
   const leaveBtn = $('#leaveGame');
   if (leaveBtn) {
-    const botRoom = (s.players || []).some((p) => p && p.bot);
-    leaveBtn.style.display = botRoom ? 'inline-block' : 'none';
+    const showLeave = s.started || (s.players || []).some((p) => p && p.bot);
+    leaveBtn.style.display = showLeave ? 'inline-block' : 'none';
+  }
+  const dissolveBtn = $('#dissolveGame');
+  if (dissolveBtn) {
+    dissolveBtn.style.display = s.started && seat === s.hostSeat ? 'inline-block' : 'none';
   }
 
   const myTurn = s.started && !s.finished && s.turn === seat;
@@ -616,6 +620,15 @@ function render(s) {
     $('#roundSummary').innerHTML = '<div class="result-row header"><span>小局</span><span>红队</span><span>蓝队</span><span>胜队</span><span>未出手分</span><span>扣分</span></div>'
       + rows.map((x) => `<div class="result-row"><span>第${x.round}局</span><span>${x.red}</span><span>${x.blue}</span><span class="winner">${x.winner === null ? '平局' : x.winner === 0 ? '红队' : '蓝队'}</span><span>${x.leftover || 0}</span><span>${x.penalty || 0}</span></div>`).join('')
       + `<div class="result-row total"><span>合计</span><span>${totalRed}</span><span>${totalBlue}</span><span>—</span><span>${totalLeft}</span><span>${totalPen}</span></div>`;
+    const remaining = (s.players || []).map((p, i) => ({ p, i }))
+      .filter(({ p }) => p && Array.isArray(p.remaining) && p.remaining.length);
+    $('#roundHands').innerHTML = remaining.length
+      ? `<div class="reveal-title">未出完手牌</div>` + remaining.map(({ p, i }) => {
+        const cards = arrangeHand(p.remaining);
+        const pts = cards.reduce((sum, c) => sum + (c.rank === 5 ? 5 : (c.rank === 10 || c.rank === 13 ? 10 : 0)), 0);
+        return `<div class="reveal-row ${p.team === '蓝队' ? 'team-blue' : 'team-red'}"><div class="reveal-name">${i === seat ? '你' : esc(p.name)}<small>${esc(p.team)} · 剩 ${cards.length} 张 · ${pts} 分</small></div><div class="reveal-cards">${cards.map((c) => cardHTML(c)).join('')}</div></div>`;
+      }).join('')
+      : '<div class="reveal-none">所有玩家均已出完</div>';
     const nextBtn = $('#nextGame');
     nextBtn.style.display = 'inline-block';
     nextBtn.disabled = busy();
@@ -639,11 +652,13 @@ function renderLobby(s) {
       ? `<button class="mini-btn" data-lobby="kick" data-seat="${i}" type="button">踢出</button>` : '';
     return `<div class="lobby-row ${i === seat ? 'mine' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}"><span class="lobby-seat">${i + 1}号位</span><span class="lobby-name">${esc(p.name)}${tags ? `<i>${tags}</i>` : ''}</span><span class="lobby-state">${stateText}${kick}</span></div>`;
   }).join('');
+  const canBot = occupied < 6;
+  const botBtn = isHost && canBot ? `<button class="btn" data-lobby="bots" type="button">补机器人</button>` : '';
   const actions = isHost
-    ? `<button class="btn primary" data-lobby="start" type="button" ${s.canStart ? '' : 'disabled'}>开始游戏</button><button class="btn" data-lobby="dissolve" type="button">解散房间</button>`
+    ? `<button class="btn primary" data-lobby="start" type="button" ${s.canStart ? '' : 'disabled'}>开始游戏</button>${botBtn}<button class="btn" data-lobby="dissolve" type="button">解散房间</button>`
     : `<button class="btn primary" data-lobby="ready" type="button">${me?.ready ? '取消准备' : '准备'}</button><button class="btn" data-lobby="leave" type="button">退出房间</button>`;
   const hint = isHost
-    ? (s.canStart ? '所有玩家已准备，可以开始' : '等待其他玩家准备')
+    ? (s.canStart ? '所有玩家已准备，可以开始' : canBot ? '真人不够可补机器人，准备后开始' : '等待其他玩家准备')
     : (me?.ready ? '已准备，等待房主开始' : '准备后等待房主开始');
   $('#trickCenter').innerHTML = `<div class="lobby-panel">
     <div class="lobby-title">候场大厅</div>
@@ -1121,6 +1136,8 @@ $('#trickCenter').addEventListener('click', (e) => {
     sendAction('start');
   } else if (action === 'copy') {
     copyInvite();
+  } else if (action === 'bots') {
+    sendAction('bots');
   }
 });
 $('#playCards').onclick = () => {
@@ -1163,6 +1180,11 @@ $('#leaveGame').onclick = () => {
   const msg = state.started ? '退出房间？剩下的牌会由机器人接管' : '退出房间？';
   if (!confirm(msg)) return;
   sendAction('leave');
+};
+$('#dissolveGame').onclick = () => {
+  if (!state || seat !== state.hostSeat) return;
+  if (!confirm('强制解散房间？所有玩家都会退出')) return;
+  sendAction('dissolve');
 };
 $('#soundToggle').onclick = () => {
   muted = !muted;
@@ -1207,7 +1229,7 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', onVi
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    try { navigator.serviceWorker.register('sw.js?v=15').catch(() => {}); } catch {}
+    try { navigator.serviceWorker.register('sw.js?v=16').catch(() => {}); } catch {}
   });
 }
 

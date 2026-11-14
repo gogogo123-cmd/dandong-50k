@@ -222,6 +222,8 @@ test('a full three-round match with bots completes and starts a new big set', { 
     while (Date.now() < end) {
       s = await getState(server, room, token);
       if (s.finished) {
+        assert.ok(s.players.every((p) => !p || Array.isArray(p.remaining)), 'finished state exposes remaining hands');
+        assert.ok(s.players.some((p) => p && p.remaining.length), 'some players still hold cards at round end');
         if (s.gamesPlayed >= 3) break;
         const n = await api(server, 'next', { room, token });
         assert.equal(n.status, 200, JSON.stringify(n.body));
@@ -629,6 +631,49 @@ test('leaving a started bot room with another human hands the seat to a bot', { 
 
     const otherState = await getState(server, room, other);
     assert.equal(otherState.started, true);
+  } finally {
+    await stopServer(server);
+  }
+});
+
+test('leaving a started human room hands the seat to a bot', { timeout: 30000 }, async () => {
+  const server = await startServer();
+  try {
+    const { room, players } = await createSix(server);
+    await readyAll(server, room, players);
+    await api(server, 'start', { room, token: players[0].token });
+
+    const left = await api(server, 'leave', { room, token: players[2].token });
+    assert.equal(left.status, 200, JSON.stringify(left.body));
+    const s = left.body.state;
+    assert.equal(s.started, true);
+    assert.equal(s.players[players[2].seat].bot, true);
+    assert.ok(s.players.some((p) => p && !p.bot));
+
+    const denied = await api(server, 'state', { room, token: players[2].token });
+    assert.equal(denied.status, 401);
+  } finally {
+    await stopServer(server);
+  }
+});
+
+test('host can force dissolve a started room', { timeout: 30000 }, async () => {
+  const server = await startServer();
+  try {
+    const { room, players } = await createSix(server);
+    await readyAll(server, room, players);
+    await api(server, 'start', { room, token: players[0].token });
+
+    const denied = await api(server, 'dissolve', { room, token: players[1].token });
+    assert.equal(denied.status, 403);
+
+    const dissolved = await api(server, 'dissolve', { room, token: players[0].token });
+    assert.equal(dissolved.status, 200, JSON.stringify(dissolved.body));
+    assert.equal(dissolved.body.state.closed, true);
+
+    await sleep(1000);
+    const gone = await api(server, 'state', { room, token: players[0].token });
+    assert.equal(gone.status, 404);
   } finally {
     await stopServer(server);
   }

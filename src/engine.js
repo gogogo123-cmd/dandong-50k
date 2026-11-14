@@ -136,6 +136,7 @@ function createEngine({ config, store }) {
         bot: !!p.bot,
         ready: !!p.ready,
         count: p.hand.length,
+        remaining: r.finished ? p.hand.map((c) => ({ ...c })) : null,
         online: isOnline(r, i),
         lastPlay: r.playedBy?.[i] || null,
       })),
@@ -335,9 +336,6 @@ function createEngine({ config, store }) {
 
     if (action === 'leave') {
       if (r.started) {
-        if (!r.players.some((x) => x && x.bot)) {
-          throw new GameError('started', '牌局已开始，无法退出', 409);
-        }
         leaveStartedRoom(r, seat);
         return r;
       }
@@ -361,7 +359,6 @@ function createEngine({ config, store }) {
 
     if (action === 'dissolve') {
       if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以解散房间', 403);
-      if (r.started) throw new GameError('started', '牌局已经开始', 409);
       dissolveRoom(r);
       return r;
     }
@@ -413,7 +410,7 @@ function createEngine({ config, store }) {
 
   function armTurn(r) {
     clearTimers(r);
-    if (!r.started || r.finished) {
+    if (!r.started || r.finished || r.closed) {
       r.turnDeadline = null;
       return;
     }
