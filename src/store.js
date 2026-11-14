@@ -33,6 +33,8 @@ function serializeRoom(r) {
     bigSet: r.bigSet,
     matchResults: r.matchResults,
     log: (r.log || []).slice(-200),
+    windSeq: r.windSeq || 0,
+    lastWind: r.lastWind || null,
     roundWinner: r.roundWinner,
     leftoverPoints: r.leftoverPoints,
     penalty: r.penalty,

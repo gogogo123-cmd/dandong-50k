@@ -49,6 +49,8 @@ function emptyRoom(id) {
     bigSet: 1,
     matchResults: [],
     log: [],
+    windSeq: 0,
+    lastWind: null,
     roundWinner: null,
     leftoverPoints: 0,
     penalty: 0,
@@ -141,6 +143,7 @@ function createEngine({ config, store }) {
         lastPlay: r.playedBy?.[i] || null,
       })),
       positions: r.positions,
+      yourSeat: seat,
       hand: r.players[seat]?.hand || [],
       turn: r.turn,
       lead: r.lead,
@@ -151,6 +154,7 @@ function createEngine({ config, store }) {
       scores: r.scores,
       trickPoints: r.trickPoints,
       finished: r.finished,
+      lastWind: r.lastWind || null,
       bigEmperor: r.bigEmperor,
       matchResults: r.matchResults,
       gamesPlayed: r.gamesPlayed,
@@ -363,9 +367,61 @@ function createEngine({ config, store }) {
       return r;
     }
 
+    if (action === 'addbot') {
+      if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以加入机器人', 403);
+      if (r.started) throw new GameError('started', '牌局已经开始', 409);
+      const target = Number(payload.seat);
+      if (!Number.isInteger(target) || target < 0 || target > 5) {
+        throw new GameError('bad-target', '无效的目标座位', 400);
+      }
+      if (r.players[target]) throw new GameError('bad-target', '该座位已有玩家', 409);
+      r.players[target] = newPlayer(`机器人${target}`, true).player;
+      return afterMutation(r);
+    }
+
+    if (action === 'removebot') {
+      if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以移除机器人', 403);
+      if (r.started) throw new GameError('started', '牌局已经开始', 409);
+      const target = Number(payload.seat);
+      if (!Number.isInteger(target) || target < 0 || target > 5) {
+        throw new GameError('bad-target', '无效的目标座位', 400);
+      }
+      const tp = r.players[target];
+      if (!tp || !tp.bot) throw new GameError('bad-target', '该座位没有机器人', 400);
+      clearSeat(r, target);
+      return afterMutation(r);
+    }
+
+    if (action === 'sit') {
+      if (r.started) throw new GameError('started', '牌局已经开始', 409);
+      const target = Number(payload.seat);
+      if (!Number.isInteger(target) || target < 0 || target > 5 || target === seat) {
+        throw new GameError('bad-target', '无效的目标座位', 400);
+      }
+      if (r.players[target]) throw new GameError('bad-target', '该座位已有玩家', 409);
+      const set = r.sockets.get(seat);
+      if (set) {
+        r.sockets.delete(seat);
+        r.sockets.set(target, set);
+        for (const ws of set) ws.seat = target;
+      }
+      r.players[target] = p;
+      r.players[seat] = null;
+      delete r.lastSeen[seat];
+      touch(r, target);
+      if (r.hostSeat === seat) r.hostSeat = target;
+      return afterMutation(r);
+    }
+
     if (action === 'bots') {
       if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以加入机器人', 403);
       if (r.started) throw new GameError('started', '牌局已经开始', 409);
+      const target = Number(payload.seat);
+      if (Number.isInteger(target) && target >= 0 && target <= 5) {
+        if (r.players[target]) throw new GameError('bad-target', '该座位已有玩家', 409);
+        r.players[target] = newPlayer(`机器人${target}`, true).player;
+        return afterMutation(r);
+      }
       for (let i = 0; i < 6; i++) {
         if (!r.players[i]) r.players[i] = newPlayer(`机器人${i}`, true).player;
       }
@@ -544,6 +600,10 @@ function createEngine({ config, store }) {
     r.bigSet = Number(rec.bigSet) || 1;
     r.matchResults = Array.isArray(rec.matchResults) ? rec.matchResults.slice(-50) : [];
     r.log = Array.isArray(rec.log) ? rec.log.slice(-200).map(String) : [];
+    r.windSeq = Number.isInteger(rec.windSeq) ? rec.windSeq : 0;
+    r.lastWind = rec.lastWind && Number.isInteger(rec.lastWind.seat)
+      ? { seat: rec.lastWind.seat, leader: Number.isInteger(rec.lastWind.leader) ? rec.lastWind.leader : null, seq: Number(rec.lastWind.seq) || 0 }
+      : null;
     r.roundWinner = Number.isInteger(rec.roundWinner) ? rec.roundWinner : null;
     r.leftoverPoints = Number(rec.leftoverPoints) || 0;
     r.penalty = Number(rec.penalty) || 0;

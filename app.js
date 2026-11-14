@@ -31,6 +31,10 @@ let audioCtx = null;
 let lastLeadSig = null;
 let lastPlaySigs = {};
 let connHideTimer = null;
+let lastWindSeq = 0;
+let windInitialized = false;
+let lastResultSig = '';
+let lastHandKey = '';
 
 const API_BASE = (window.DANDONG_API_BASE || '').replace(/\/+$/, '');
 const ASSET_PREFIX = window.DANDONG_ASSET_PREFIX || '/assets/';
@@ -189,6 +193,21 @@ function suitChar(c) {
 const CARD_SUIT_KEY = { 0: 's', 1: 'h', 2: 'c', 3: 'd' };
 const CARD_RANK_KEY = { 5: '5', 6: '6', 7: '7', 8: '8', 9: '9', 10: '10', 11: '11', 12: '12', 13: '13', 14: '14', 15: '15' };
 const CARD_RANK_LABEL = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: '2' };
+
+// 进牌桌前把全部牌面预加载进内存，避免首轮出牌时一张张下载出现白板。
+const PRELOADED_FACES = [];
+function preloadCardFaces() {
+  const srcs = [jokerFaces.small, jokerFaces.big];
+  for (const suit of Object.values(CARD_SUIT_KEY)) {
+    for (const rank of Object.values(CARD_RANK_KEY)) srcs.push(`${ASSET_PREFIX}card-${suit}-${rank}.jpg`);
+  }
+  for (const src of srcs) {
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = src;
+    PRELOADED_FACES.push(img);
+  }
+}
 
 function cardHTML(c, selected = false, animate = false) {
   if (c.rank >= 16) {
@@ -439,6 +458,9 @@ function applyState(s, serverNow) {
     goHome();
     return;
   }
+  if (Number.isInteger(s.yourSeat) && s.yourSeat >= 0 && Array.isArray(s.players) && s.players[s.yourSeat]) {
+    seat = s.yourSeat;
+  }
   if (seat >= 0 && Array.isArray(s.players) && s.players[seat] == null) {
     notice('你已离开或被移出房间');
     goHome();
@@ -466,6 +488,34 @@ function applyState(s, serverNow) {
   state = s;
   render(s);
   updateCountdown();
+  checkWind(s);
+}
+
+function checkWind(s) {
+  const wind = s.lastWind;
+  if (!windInitialized) {
+    windInitialized = true;
+    lastWindSeq = wind && Number.isInteger(wind.seq) ? wind.seq : 0;
+    return;
+  }
+  if (!wind || !Number.isInteger(wind.seq)) return;
+  if (wind.seq === lastWindSeq) return;
+  lastWindSeq = wind.seq;
+  const name = wind.seat === seat ? '你' : (s.players?.[wind.seat]?.name || '玩家');
+  const el = $('#windBanner');
+  if (el) {
+    el.textContent = `接风 · ${name} 接手出牌`;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(checkWind.timer);
+    checkWind.timer = setTimeout(() => el.classList.remove('show'), 2400);
+  }
+  const seatEl = document.querySelector(`#players .player-seat[data-seat="${wind.seat}"]`);
+  if (seatEl) {
+    seatEl.classList.add('wind-hit');
+    setTimeout(() => seatEl.classList.remove('wind-hit'), 1800);
+  }
 }
 
 function playSig(cards) {
@@ -548,37 +598,43 @@ function render(s) {
     let play = '';
     if (s.started && !s.finished && !isMe) {
       const timer = active ? '<span class="seat-timer show play-timer">--</span>' : '';
-      if (p.done) play = `<div class="player-play play-done ${aura}"><span class="pass-pill done-pill">已出完</span></div>`;
-      else if (s.passed?.[i]) play = `<div class="player-play play-pass ${aura}">${timer}<span class="pass-pill">不要</span></div>`;
+      // 出完最后一手但本轮还没结束（未给风/未收分）时，先保留这手牌。
+      const holdingLead = p.done && !!s.lead;
+      if (p.done && !holdingLead) play = `<div class="player-play play-done ${aura}"><span class="pass-pill done-pill">已出完</span></div>`;
+      else if (!p.done && s.passed?.[i]) play = `<div class="player-play play-pass ${aura}">${timer}<span class="pass-pill">不要</span></div>`;
       else if (p.lastPlay?.length) play = `<div class="player-play ${aura}">${timer}${p.lastPlay.map((c) => cardHTML(c, false, animate)).join('')}</div>`;
       else if (active) play = `<div class="player-play play-turn ${aura}">${timer}</div>`;
     }
-    return `<div class="player-seat spot-${rel} ${active ? 'active' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}${isMe ? ' is-me' : ''}"><div class="seat-head"><div class="avatar">${avatar}</div><span class="seat-name">${esc(p.name)}${host}</span></div><div class="seat-meta">${meta}</div>${play}</div>`;
+    return `<div class="player-seat spot-${rel} ${active ? 'active' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}${isMe ? ' is-me' : ''}" data-seat="${i}"><div class="seat-head"><div class="avatar">${avatar}</div><span class="seat-name">${esc(p.name)}${host}</span></div><div class="seat-meta">${meta}</div>${play}</div>`;
   }).join('');
 
   const mine = s.players?.[seat]?.lastPlay;
   const mySig = playSig(mine);
   const myPass = s.passed?.[seat];
   const myDone = !!s.players?.[seat]?.done;
+  const myHoldingLead = myDone && !!s.lead;
   newSigs[`me:${seat}`] = mySig;
   const myPlayEl = $('#myPlay');
   if (s.started && !s.finished && !myTurn && (myDone || myPass || mine?.length)) {
     myPlayEl.style.display = 'flex';
-    myPlayEl.className = `my-play play-mate${myDone ? ' play-done' : myPass ? ' play-pass' : ''}`;
+    myPlayEl.className = `my-play play-mate${myDone && !myHoldingLead ? ' play-done' : myPass ? ' play-pass' : ''}`;
     const myAnimate = !!mySig && mySig !== prevSigs[`me:${seat}`];
-    myPlayEl.innerHTML = myDone
+    myPlayEl.innerHTML = myDone && !myHoldingLead
       ? '<span class="pass-pill done-pill">已出完</span>'
-      : myPass ? '<span class="pass-pill">不要</span>' : mine.map((c) => cardHTML(c, false, myAnimate)).join('');
+      : myPass ? '<span class="pass-pill">不要</span>' : (mine || []).map((c) => cardHTML(c, false, myAnimate)).join('');
   } else {
     myPlayEl.style.display = 'none';
     myPlayEl.innerHTML = '';
   }
   lastPlaySigs = newSigs;
 
-  $('#handCount').textContent = `${(s.hand || []).length}张`;
   const hand = arrangeHand(s.hand || []);
-  $('#myHand').innerHTML = hand.map((c) => cardHTML(c, selection.has(c.id))).join('');
-  fitHand();
+  const handKey = `${hand.map((c) => c.id).join(',')}|${[...selection].sort().join(',')}`;
+  if (handKey !== lastHandKey) {
+    lastHandKey = handKey;
+    $('#myHand').innerHTML = hand.map((c) => cardHTML(c, selection.has(c.id))).join('');
+    fitHand();
+  }
 
   const chosen = (s.hand || []).filter((c) => selection.has(c.id));
   const type = getType(chosen);
@@ -605,7 +661,9 @@ function render(s) {
 
   const modal = $('#roundModal');
   modal.classList.toggle('show', !!s.finished);
+  if (!s.finished) lastResultSig = '';
   if (s.finished) {
+    renderRoundResult(s);
     const emperorTeam = s.bigEmperor === null || s.bigEmperor === undefined ? null : s.players?.[s.bigEmperor]?.team;
     $('#roundTitle').textContent = (s.gamesPlayed || 0) >= 3 ? `大局${s.bigSet}结束` : `第${s.gamesPlayed}小局结束`;
     $('#roundDetail').textContent = `${s.roundWinner === null ? '本小局平局' : `${s.roundWinner === 0 ? '红队' : '蓝队'}获胜`} · 未出手分牌 ${s.leftoverPoints || 0} 分转给对方 · 非大皇队扣分 ${s.penalty || 0} 分 · 大皇${emperorTeam ? `（${emperorTeam}）` : '未产生'}`;
@@ -636,6 +694,46 @@ function render(s) {
   }
 }
 
+function renderRoundResult(s) {
+  const el = $('#roundResult');
+  if (!el) return;
+  const winner = s.roundWinner;
+  const red = s.scores?.[0] ?? 0;
+  const blue = s.scores?.[1] ?? 0;
+  const kind = winner === null || winner === undefined ? 'draw' : winner === 0 ? 'red' : 'blue';
+  const label = kind === 'draw' ? '平局' : kind === 'red' ? '红队获胜' : '蓝队获胜';
+  el.className = `round-result ${kind}`;
+  el.innerHTML = `<b>${label}</b><span>红 ${red} : ${blue} 蓝</span>`;
+  const sig = `${s.gamesPlayed}:${kind}:${red}:${blue}`;
+  if (sig === lastResultSig) return;
+  lastResultSig = sig;
+  spawnConfetti(kind);
+}
+
+function spawnConfetti(kind) {
+  const box = $('#roundConfetti');
+  if (!box) return;
+  box.innerHTML = '';
+  const colors = kind === 'red'
+    ? ['#ff6b61', '#d34a43', '#ffd166', '#ffe9d6']
+    : kind === 'blue'
+      ? ['#6eaed7', '#3d7fb5', '#ffd166', '#dff2ff']
+      : ['#e9c47a', '#b7cec3', '#f5efdf'];
+  for (let i = 0; i < 36; i++) {
+    const piece = document.createElement('i');
+    const left = Math.random() * 100;
+    const delay = Math.random() * 0.7;
+    const dx = (Math.random() * 160 - 80).toFixed(0);
+    const dur = (1.4 + Math.random() * 1.1).toFixed(2);
+    piece.style.cssText = `left:${left.toFixed(1)}%;background:${colors[i % colors.length]};`
+      + `--dx:${dx}px;animation-delay:${delay.toFixed(2)}s;animation-duration:${dur}s;`
+      + `width:${(5 + Math.random() * 5).toFixed(0)}px;height:${(9 + Math.random() * 8).toFixed(0)}px`;
+    box.appendChild(piece);
+  }
+  clearTimeout(spawnConfetti.timer);
+  spawnConfetti.timer = setTimeout(() => { box.innerHTML = ''; }, 3200);
+}
+
 /* ---------- 大厅 / 个人信息 / 手牌排版 ---------- */
 
 function renderLobby(s) {
@@ -645,20 +743,27 @@ function renderLobby(s) {
   const isHost = seat === s.hostSeat;
   const me = players[seat];
   const rows = players.map((p, i) => {
-    if (!p) return `<div class="lobby-row empty"><span class="lobby-seat">${i + 1}号位</span><span class="lobby-name">空位</span><span class="lobby-state">—</span></div>`;
-    const tags = [i === seat ? '你' : '', i === s.hostSeat ? '房主' : '', p.bot ? '机器人' : ''].filter(Boolean).join(' · ');
+    const team = i % 2 ? '蓝队' : '红队';
+    if (!p) {
+      const btns = [];
+      if (isHost) btns.push(`<button class="mini-btn" data-lobby="addbot" data-seat="${i}" type="button">+机器人</button>`);
+      btns.push(`<button class="mini-btn" data-lobby="sit" data-seat="${i}" type="button">坐这里</button>`);
+      return `<div class="lobby-row empty"><span class="lobby-seat">${i + 1}号位</span><span class="lobby-name">空位 <i>${team}</i></span><span class="lobby-state">${btns.join('')}</span></div>`;
+    }
+    const tags = [i === seat ? '你' : '', i === s.hostSeat ? '房主' : '', p.bot ? '机器人' : '', p.team].filter(Boolean).join(' · ');
     const stateText = p.ready ? '<b class="ok">已准备</b>' : '<b class="no">未准备</b>';
-    const kick = isHost && i !== seat && !p.bot && !p.ready
-      ? `<button class="mini-btn" data-lobby="kick" data-seat="${i}" type="button">踢出</button>` : '';
-    return `<div class="lobby-row ${i === seat ? 'mine' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}"><span class="lobby-seat">${i + 1}号位</span><span class="lobby-name">${esc(p.name)}${tags ? `<i>${tags}</i>` : ''}</span><span class="lobby-state">${stateText}${kick}</span></div>`;
+    let manage = '';
+    if (isHost && i !== seat) {
+      if (p.bot) manage = `<button class="mini-btn" data-lobby="removebot" data-seat="${i}" type="button">移除</button>`;
+      else if (!p.ready) manage = `<button class="mini-btn" data-lobby="kick" data-seat="${i}" type="button">踢出</button>`;
+    }
+    return `<div class="lobby-row ${i === seat ? 'mine' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}"><span class="lobby-seat">${i + 1}号位</span><span class="lobby-name">${esc(p.name)}${tags ? `<i>${tags}</i>` : ''}</span><span class="lobby-state">${stateText}${manage}</span></div>`;
   }).join('');
-  const canBot = occupied < 6;
-  const botBtn = isHost && canBot ? `<button class="btn" data-lobby="bots" type="button">补机器人</button>` : '';
   const actions = isHost
-    ? `<button class="btn primary" data-lobby="start" type="button" ${s.canStart ? '' : 'disabled'}>开始游戏</button>${botBtn}<button class="btn" data-lobby="dissolve" type="button">解散房间</button>`
+    ? `<button class="btn primary" data-lobby="start" type="button" ${s.canStart ? '' : 'disabled'}>开始游戏</button><button class="btn" data-lobby="dissolve" type="button">解散房间</button>`
     : `<button class="btn primary" data-lobby="ready" type="button">${me?.ready ? '取消准备' : '准备'}</button><button class="btn" data-lobby="leave" type="button">退出房间</button>`;
   const hint = isHost
-    ? (s.canStart ? '所有玩家已准备，可以开始' : canBot ? '真人不够可补机器人，准备后开始' : '等待其他玩家准备')
+    ? (s.canStart ? '所有玩家已准备，可以开始' : '空位可逐个加机器人，也可换到空位；6 人准备后开始')
     : (me?.ready ? '已准备，等待房主开始' : '准备后等待房主开始');
   $('#trickCenter').innerHTML = `<div class="lobby-panel">
     <div class="lobby-title">候场大厅</div>
@@ -774,6 +879,10 @@ function goHome() {
   hintBreaks = 0;
   lastTurnKey = '';
   lastFinished = false;
+  lastWindSeq = 0;
+  windInitialized = false;
+  lastResultSig = '';
+  lastHandKey = '';
   clearSession();
   document.body.classList.remove('in-game');
   document.body.classList.remove('lobby-mode');
@@ -1068,6 +1177,10 @@ async function joinRoom(mode, name) {
     lastVersion = -1;
     lastLeadSig = null;
     lastPlaySigs = {};
+    lastWindSeq = 0;
+    windInitialized = false;
+    lastResultSig = '';
+    lastHandKey = '';
     selection.clear();
     saveSession();
     history.replaceState(null, '', '#room=' + roomId);
@@ -1075,8 +1188,11 @@ async function joinRoom(mode, name) {
     applyState(r.state, r.state.serverNow);
     if (mode === 'demo') {
       try {
-        const b = await api('bots', { room: roomId, token });
-        applyState(b.state, b.state.serverNow);
+        for (let i = 0; i < 6; i++) {
+          if (i === seat) continue;
+          const b = await api('addbot', { room: roomId, token, seat: i });
+          applyState(b.state, b.state.serverNow);
+        }
         const started = await api('start', { room: roomId, token });
         applyState(started.state, started.state.serverNow);
       } catch (e) {
@@ -1136,6 +1252,12 @@ $('#trickCenter').addEventListener('click', (e) => {
     sendAction('start');
   } else if (action === 'copy') {
     copyInvite();
+  } else if (action === 'addbot') {
+    sendAction('addbot', { seat: Number(btn.dataset.seat) });
+  } else if (action === 'removebot') {
+    sendAction('removebot', { seat: Number(btn.dataset.seat) });
+  } else if (action === 'sit') {
+    sendAction('sit', { seat: Number(btn.dataset.seat) });
   } else if (action === 'bots') {
     sendAction('bots');
   }
@@ -1229,12 +1351,13 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', onVi
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    try { navigator.serviceWorker.register('sw.js?v=16').catch(() => {}); } catch {}
+    try { navigator.serviceWorker.register('sw.js?v=17').catch(() => {}); } catch {}
   });
 }
 
 syncViewport();
 bindHandPointer();
+preloadCardFaces();
 
 function bootFromSession() {
   const saved = loadSession();
