@@ -99,6 +99,9 @@ function typeOf(cards, cx) {
     if (!level) return null;
     return { kind: 'jokerBomb', n, rank, power: rank, bombLevel: level };
   }
+  if (n === 2 && ranks[0] >= RANK_SMALL && ranks[0] === ranks[1]) {
+    return { kind: 'jokerPair', n: 2, rank: ranks[0], power: ranks[0] };
+  }
   if (n === 4 && suits.every((s) => s === suits[0]) && ranks.every((r) => r === ranks[0]) && ranks[0] >= 7 && ranks[0] <= RANK_TWO) {
     return { kind: 'suitBomb', n: 4, rank: ranks[0], power: ranks[0], bombLevel: 1 };
   }
@@ -145,7 +148,12 @@ function beatsType(a, b) {
   if (ab) return true;
   if (bb) return false;
   if (a.kind === 'single') return b.kind === 'single' && a.power > b.power;
-  if (a.kind === 'emperorPair') return b.kind === 'combo' && b.n === 2;
+  if (a.kind === 'jokerPair') {
+    if (b.kind === 'combo') return b.n === 2;
+    if (b.kind === 'jokerPair') return a.rank > b.rank;
+    return false;
+  }
+  if (a.kind === 'emperorPair') return (b.kind === 'combo' && b.n === 2) || b.kind === 'jokerPair';
   if (a.kind === 'combo') {
     if (b.kind !== 'combo' || a.n !== b.n) return false;
     const ln = Math.min(a.normals.length, b.normals.length);
@@ -166,6 +174,7 @@ function describeType(t) {
       if (t.role === 'guard') return '侍卫牌';
       return `${RANK_LABEL[t.rank]}单张`;
     case 'emperorPair': return '皇炸对子';
+    case 'jokerPair': return `两张${t.rank === RANK_SMALL ? '小王' : '大王'}`;
     case 'emperorBomb': return '皇炸三张';
     case 'suitBomb': return `${RANK_LABEL[t.rank]}同花炸弹`;
     case 'jokerBomb': return `${t.n}张${t.rank === RANK_SMALL ? '小王' : '大王'}炸弹`;
@@ -257,7 +266,7 @@ function buildHints(s) {
 
   for (const rank of [RANK_SMALL, RANK_BIG]) {
     const group = hand.filter((c) => c.rank === rank);
-    for (let n = 3; n <= group.length; n++) add(group.slice(0, n));
+    for (let n = 2; n <= group.length; n++) add(group.slice(0, n));
   }
 
   const suitGroups = new Map();

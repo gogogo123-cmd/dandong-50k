@@ -713,10 +713,10 @@ function botCandidates(r, seat) {
   const emperor = hand.filter((c) => (r.emperorTripleIds || []).includes(c.id));
   for (let n = 2; n <= 3; n++) if (emperor.length >= n) add(emperor.slice(0, n));
 
-  // 王炸
+  // 王炸与双王对
   for (const rank of [16, 17]) {
     const group = hand.filter((c) => c.rank === rank);
-    for (let n = 3; n <= group.length; n++) add(group.slice(0, n));
+    for (let n = 2; n <= group.length; n++) add(group.slice(0, n));
   }
 
   // 四张同花色炸弹

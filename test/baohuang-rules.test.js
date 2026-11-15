@@ -124,7 +124,9 @@ test('混儿组合：2 作混儿时与王不能同组，纯2可作普通牌成�
   assert.equal(analyze([c(8), c(15), c(16)]), null, '2 和王不能同为混儿');
   assert.equal(analyze([c(15), c(15)]).kind, 'combo', '纯2可以成对');
   assert.equal(analyze([c(15), c(15), c(15)]).kind, 'combo', '纯2可以成三张');
-  assert.equal(analyze([c(16), c(16)]), null, '双王不能成对');
+  assert.equal(analyze([c(16), c(16)]).kind, 'jokerPair', '两张小王可以成对');
+  assert.equal(analyze([c(17), c(17)]).kind, 'jokerPair', '两张大王可以成对');
+  assert.equal(analyze([c(16), c(17)]), null, '小王+大王不能成组');
   const both = analyze([c(8), c(8), c(8), c(16), c(17)]);
   assert.equal(both.kind, 'combo', '小王和大王可以同时作混儿');
   assert.deepEqual(both.wilds, [2, 2]);
@@ -259,4 +261,29 @@ test('单张大小：大王 > 小王 > 2 > A > ... > 7', () => {
     const lo = rules.analyze([c(order[i - 1])]);
     assert.equal(rules.beats(hi, lo), true, `${order[i]} > ${order[i - 1]}`);
   }
+});
+
+test('双王对：小王对压所有普通对子，大王对再压小王对；小王+大王不成组', () => {
+  const smallPair = analyze([c(16, 0), c(16, 1)]);
+  const bigPair = analyze([c(17, 0), c(17, 1)]);
+  const pairA = analyze([c(14, 0), c(14, 1)]);
+  const pair2 = analyze([c(15, 0), c(15, 1)]);
+  assert.equal(smallPair.kind, 'jokerPair');
+  assert.equal(bigPair.kind, 'jokerPair');
+  assert.equal(rules.beats(smallPair, pairA), true);
+  assert.equal(rules.beats(smallPair, pair2), true);
+  assert.equal(rules.beats(bigPair, pairA), true);
+  assert.equal(rules.beats(bigPair, smallPair), true);
+  assert.equal(rules.beats(smallPair, bigPair), false);
+  assert.equal(rules.beats(smallPair, smallPair), false);
+  assert.equal(analyze([c(16, 0), c(17, 0)]), null, '小王+大王不成组');
+  const smallBomb = analyze([c(16, 0), c(16, 0), c(16, 0)]);
+  assert.equal(rules.beats(smallBomb, bigPair), true, '王炸压双王对');
+  assert.equal(rules.beats(analyze([c(9), c(9)]), smallPair), false, '普通对子压不过双王对');
+
+  const empCards = [c(9, 2), c(9, 2), c(9, 2)];
+  const ectx = ctx(empCards.map((x) => x.id));
+  const empPair = rules.analyze([empCards[0], empCards[1]], ectx);
+  assert.equal(rules.beats(empPair, bigPair), true, '皇炸对子仍是最大对子');
+  assert.equal(rules.beats(bigPair, empPair), false);
 });

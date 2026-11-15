@@ -71,6 +71,11 @@ function analyze(cards, ctx = {}) {
     return { kind: 'jokerBomb', n, rank, power: rank, bombLevel: level };
   }
 
+  // 双王对：两张相同王可成对（小王对压所有普通对子，大王对压普通对子和小王对）；小王+大王不成组
+  if (n === 2 && ranks[0] >= RANK_SMALL && ranks[0] === ranks[1]) {
+    return { kind: 'jokerPair', n: 2, rank: ranks[0], power: ranks[0] };
+  }
+
   // 四张同花色、同点数炸弹（7~2，四张真实牌）
   if (n === 4 && suits.every((s) => s === suits[0]) && ranks.every((r) => r === ranks[0])
     && ranks[0] >= 7 && ranks[0] <= RANK_TWO) {
@@ -158,9 +163,15 @@ function beats(a, b) {
     return a.power > b.power;
   }
 
+  if (a.kind === 'jokerPair') {
+    if (b.kind === 'combo') return b.n === 2; // 双王对压所有普通对子
+    if (b.kind === 'jokerPair') return a.rank > b.rank; // 大王对压小王对
+    return false;
+  }
+
   if (a.kind === 'emperorPair') {
-    // 皇炸对子是全场最大对子：可压普通对子，同级不能互压
-    return b.kind === 'combo' && b.n === 2;
+    // 皇炸对子是全场最大对子：可压普通对子与双王对，同级不能互压
+    return (b.kind === 'combo' && b.n === 2) || b.kind === 'jokerPair';
   }
 
   if (a.kind === 'combo') {
@@ -186,6 +197,7 @@ function describeType(type) {
       if (type.role === 'guard') return '侍卫牌';
       return `${rankLabel(type.rank)}单张`;
     case 'emperorPair': return '皇炸对子';
+    case 'jokerPair': return `两张${type.rank === RANK_SMALL ? '小王' : '大王'}`;
     case 'emperorBomb': return '皇炸三张';
     case 'suitBomb': return `${rankLabel(type.rank)}同花炸弹`;
     case 'jokerBomb': return `${type.n}张${type.rank === RANK_SMALL ? '小王' : '大王'}炸弹`;
