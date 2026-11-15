@@ -293,6 +293,11 @@ function yieldEmperor(r, seat) {
   r.turn = to;
   r.log.push(`${seatName(r, from)} 让位给${seatName(r, to)}${paid ? `，上贡${cardLabel(paid)}` : ''}`);
   if (r.transferCount >= SEATS) {
+    // 最后一位让位者上贡的2可能刚好凑成三张同花色同点数：此时必须由新候选登基，不能重新发牌
+    if (validTriples(r, to).length) {
+      r.log.push(`${seatName(r, to)} 获得上贡后满足登基条件，必须登基`);
+      return;
+    }
     redeal(r, '五位玩家均未满足登基条件，本局重新发牌');
   }
 }
@@ -563,6 +568,7 @@ function doPlay(r, seat, cards) {
 function doPass(r, seat) {
   if (!r.lead || r.lead.seat === seat) throw new GameError('no-lead', '当前没有上家牌，不能不要', 400);
   r.passed[seat] = true;
+  r.playedBy[seat] = null; // 不要后不再显示本轮早先出的牌，避免误认领出
   r.passes += 1;
   r.log.push(`${seatName(r, seat)} 不要`);
   const responders = r.lead.responders || 0;
@@ -692,10 +698,10 @@ function botCandidates(r, seat) {
   // 单张
   for (const c of hand) add([c]);
 
-  // 同点数普通牌（含 4+ 套牌）
+  // 同点数普通牌（含 4+ 套牌；2 也可作为最大普通牌成组）
   const byRank = new Map();
   for (const c of hand) {
-    if (c.rank < 7 || c.rank > 14) continue;
+    if (c.rank < 7 || c.rank > RANK_TWO) continue;
     if (!byRank.has(c.rank)) byRank.set(c.rank, []);
     byRank.get(c.rank).push(c);
   }
@@ -728,13 +734,14 @@ function botCandidates(r, seat) {
   const kings = hand.filter((c) => c.rank >= 16);
   const nTarget = lead ? lead.n : 0;
   for (const [rank, group] of byRank) {
-    void rank;
-    const maxN = lead ? Math.min(hand.length, nTarget) : Math.min(hand.length, group.length + twos.length + kings.length);
+    const isTwoGroup = rank === RANK_TWO;
+    const wildPool = isTwoGroup ? kings.length : twos.length + kings.length;
+    const maxN = lead ? Math.min(hand.length, nTarget) : Math.min(hand.length, group.length + wildPool);
     for (let n = 2; n <= maxN; n++) {
       for (let k = 1; k <= Math.min(group.length, n); k++) {
         const w = n - k;
         if (w === 0) continue; // 纯普通牌已在上面生成
-        if (twos.length >= w) add([...group.slice(0, k), ...twos.slice(0, w)]);
+        if (!isTwoGroup && twos.length >= w) add([...group.slice(0, k), ...twos.slice(0, w)]);
         if (kings.length >= w) add([...group.slice(0, k), ...kings.slice(0, w)]);
       }
     }

@@ -77,18 +77,29 @@ function analyze(cards, ctx = {}) {
     return { kind: 'suitBomb', n: 4, rank: ranks[0], power: ranks[0], bombLevel: 1 };
   }
 
-  // 普通牌 + 混儿组合
+  // 普通牌 + 混儿组合。2 兼具普通牌（最大普通点数）与混儿两种身份：
+  // - 与其他普通点数同组时，2 作为混儿；
+  // - 没有其他普通点数时，2 作为普通牌成组（对/三/四张2），王仍可作混儿。
   const normals = [];
-  const wilds = [];
+  const twos = [];
+  const kings = [];
   for (const c of cards) {
     if (c.rank >= 7 && c.rank <= 14) normals.push(c.rank);
-    else if (c.rank === RANK_TWO || c.rank >= RANK_SMALL) wilds.push(c.rank);
+    else if (c.rank === RANK_TWO) twos.push(c.rank);
+    else if (c.rank >= RANK_SMALL) kings.push(c.rank);
     else return null;
   }
-  // 必须至少有一张普通牌；纯混儿不能成组（王炸/皇炸已单独处理）
-  if (!normals.length) return null;
+  let wilds;
+  if (normals.length) {
+    if (twos.length && kings.length) return null; // 2 和王不能同为混儿
+    wilds = twos.concat(kings);
+  } else if (twos.length) {
+    normals.push(...twos); // 纯2组按普通牌 2（最大普通点数）处理
+    wilds = kings;
+  } else {
+    return null; // 纯王不能成组（王炸/皇炸已单独处理）
+  }
   if (!normals.every((r) => r === normals[0])) return null;
-  if (wilds.some((r) => r === RANK_TWO) && wilds.some((r) => r >= RANK_SMALL)) return null;
 
   normals.sort((a, b) => b - a);
   const wp = wilds.map(wildPower).sort((a, b) => b - a);

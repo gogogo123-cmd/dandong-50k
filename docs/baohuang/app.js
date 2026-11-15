@@ -103,15 +103,25 @@ function typeOf(cards, cx) {
     return { kind: 'suitBomb', n: 4, rank: ranks[0], power: ranks[0], bombLevel: 1 };
   }
   const normals = [];
-  const wilds = [];
+  const twos = [];
+  const kings = [];
   for (const c of cards) {
     if (c.rank >= 7 && c.rank <= 14) normals.push(c.rank);
-    else if (c.rank === RANK_TWO || c.rank >= RANK_SMALL) wilds.push(c.rank);
+    else if (c.rank === RANK_TWO) twos.push(c.rank);
+    else if (c.rank >= RANK_SMALL) kings.push(c.rank);
     else return null;
   }
-  if (!normals.length) return null;
+  let wilds;
+  if (normals.length) {
+    if (twos.length && kings.length) return null;
+    wilds = twos.concat(kings);
+  } else if (twos.length) {
+    normals.push(...twos);
+    wilds = kings;
+  } else {
+    return null;
+  }
   if (!normals.every((r) => r === normals[0])) return null;
-  if (wilds.some((r) => r === RANK_TWO) && wilds.some((r) => r >= RANK_SMALL)) return null;
   normals.sort((a, b) => b - a);
   const wp = wilds.map(wildPower).sort((a, b) => b - a);
   return { kind: 'combo', n, normals, wilds: wp, normalRank: normals[0], wildFamily: wp.length ? (wilds[0] === RANK_TWO ? 'two' : 'king') : null, power: normals[0] };
@@ -236,7 +246,7 @@ function buildHints(s) {
 
   const byRank = new Map();
   for (const c of hand) {
-    if (c.rank < 7 || c.rank > 14) continue;
+    if (c.rank < 7 || c.rank > RANK_TWO) continue;
     if (!byRank.has(c.rank)) byRank.set(c.rank, []);
     byRank.get(c.rank).push(c);
   }
@@ -263,12 +273,14 @@ function buildHints(s) {
   const kings = hand.filter((c) => c.rank >= RANK_SMALL);
   const nTarget = target ? target.n : 0;
   for (const group of byRank.values()) {
-    const maxN = target ? Math.min(hand.length, nTarget) : Math.min(8, group.length + twos.length + kings.length);
+    const isTwoGroup = group[0].rank === RANK_TWO;
+    const wildPool = isTwoGroup ? kings.length : twos.length + kings.length;
+    const maxN = target ? Math.min(hand.length, nTarget) : Math.min(8, group.length + wildPool);
     for (let n = 2; n <= maxN; n++) {
       for (let k = 1; k <= Math.min(group.length, n); k++) {
         const w = n - k;
         if (!w) continue;
-        if (twos.length >= w) add([...group.slice(0, k), ...twos.slice(0, w)]);
+        if (!isTwoGroup && twos.length >= w) add([...group.slice(0, k), ...twos.slice(0, w)]);
         if (kings.length >= w) add([...group.slice(0, k), ...kings.slice(0, w)]);
       }
     }

@@ -119,14 +119,32 @@ test('普通牌型：不允许顺子/连对/三带', () => {
   assert.equal(analyze(group(9, 5).map((x, i) => c(9, i % 4))).kind, 'combo');
 });
 
-test('混儿组合：2 与王不能同组，纯混儿不能成组', () => {
+test('混儿组合：2 作混儿时与王不能同组，纯2可作普通牌成组', () => {
   assert.equal(analyze([c(8), c(8), c(8), c(15)]).kind, 'combo');
-  assert.equal(analyze([c(8), c(15), c(16)]), null, '2 和王不能同组');
-  assert.equal(analyze([c(15), c(15)]), null, '纯2不能成组');
+  assert.equal(analyze([c(8), c(15), c(16)]), null, '2 和王不能同为混儿');
+  assert.equal(analyze([c(15), c(15)]).kind, 'combo', '纯2可以成对');
+  assert.equal(analyze([c(15), c(15), c(15)]).kind, 'combo', '纯2可以成三张');
   assert.equal(analyze([c(16), c(16)]), null, '双王不能成对');
   const both = analyze([c(8), c(8), c(8), c(16), c(17)]);
   assert.equal(both.kind, 'combo', '小王和大王可以同时作混儿');
   assert.deepEqual(both.wilds, [2, 2]);
+});
+
+test('2 兼具普通牌与混儿：按最大普通点数比较，纯2可压A', () => {
+  const pair2 = analyze([c(15, 0), c(15, 1)]);
+  const pairA = analyze([c(14, 0), c(14, 1)]);
+  assert.equal(rules.beats(pair2, pairA), true, '对2压对A');
+  assert.equal(rules.beats(pairA, pair2), false);
+
+  const four2 = analyze([c(15, 0), c(15, 1), c(15, 2), c(15, 3)]);
+  const fourA = analyze([c(14, 0), c(14, 1), c(14, 2), c(14, 3)]);
+  assert.equal(four2.normalRank, 15);
+  assert.equal(rules.beats(four2, fourA), true, '四个2压四个A');
+
+  const lead = analyze([c(13, 0), c(15, 0), c(15, 1)]);
+  const twoWithKings = analyze([c(15, 2), c(16, 0), c(17, 0)]);
+  assert.equal(twoWithKings.kind, 'combo');
+  assert.equal(rules.beats(twoWithKings, lead), true, '2+小王+大王可压 K+22');
 });
 
 test('四张同花色炸弹不能用混儿补足', () => {

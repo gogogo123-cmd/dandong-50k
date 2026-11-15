@@ -478,3 +478,55 @@ test('整局机器人依次行动：不会连续由同一座位出牌，真人�
   assert.ok(r.finished, '整局应正常结算');
   assert.ok(humanCardTurns >= 3, `真人应持续参与出牌，实际 ${humanCardTurns} 次`);
 });
+
+test('不要后清空该玩家本轮早先出的牌，出牌区应显示不要', () => {
+  const r = makeRoom([
+    [c(7), c(7)],
+    [c(8), c(7)],
+    [c(9), c(7)],
+    [c(10), c(7)],
+    [c(7), c(7)],
+  ], { phase: 'playing', turn: 0 });
+  action(r, 0, 'play', { cards: [r.players[0].hand[0].id] });
+  action(r, 1, 'play', { cards: [r.players[1].hand[0].id] });
+  action(r, 2, 'play', { cards: [r.players[2].hand[0].id] });
+  action(r, 3, 'play', { cards: [r.players[3].hand[0].id] });
+  action(r, 4, 'pass');
+  action(r, 0, 'pass');
+  action(r, 1, 'pass');
+  assert.equal(r.passed[1], true);
+  assert.equal(r.lead.seat, 3, '本轮仍由出了10的玩家领出');
+  assert.equal(r.players[1].hand.length, 1, '玩家1仍有手牌');
+  const s = bh.publicState(r, 0);
+  assert.equal(s.passed[1], true);
+  assert.equal(s.players[1].lastPlay, null, '不要后不再显示早先出的8');
+  assert.equal(s.players[0].lastPlay, null, '不要后不再显示早先出的7');
+});
+
+test('皇帝让位转满一圈：上贡的2凑成三张必须登基，不得重新发牌', () => {
+  const twoC1 = c(15, 2), twoC2 = c(15, 2), twoC3 = c(15, 2), twoC4 = c(15, 2);
+  const r = makeRoom([
+    [twoC1, twoC2, c(7, 0)],
+    [twoC3, c(9, 0)],
+    [twoC4, c(15, 1), c(10, 0)],
+    [c(15, 1), c(11, 0)],
+    [c(15, 0), c(12, 0)],
+  ], { phase: 'emperor', candidateSeat: 0, initialCandidateSeat: 0, transferCount: 0 });
+  for (const seat of [0, 4, 3, 2, 1]) {
+    action(r, seat, 'emperor', { yield: true });
+  }
+  assert.equal(r.redealCount, 0, '凑成三张时不应重新发牌');
+  assert.equal(r.phase, 'emperor');
+  assert.equal(r.candidateSeat, 0);
+  assert.equal(bh.publicState(r, 0).candidateSeat, 0);
+  assert.equal(r.players[0].hand.filter((x) => x.rank === 15 && x.suit === 2).length, 3);
+  assert.throws(
+    () => action(r, 0, 'emperor', { yield: true }),
+    (e) => e.code === 'must-enthrone',
+  );
+  const triple = r.players[0].hand.filter((x) => x.rank === 15 && x.suit === 2);
+  action(r, 0, 'emperor', { cards: triple.map((x) => x.id) });
+  assert.equal(r.phase, 'playing');
+  assert.equal(r.emperorSeat, 0);
+  assert.equal(r.guardSeat, 1);
+});
