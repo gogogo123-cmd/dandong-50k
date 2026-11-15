@@ -109,7 +109,7 @@ function readBody(req, res, cb) {
   req.on('error', () => {});
 }
 
-const API_ACTIONS = new Set(['create', 'join', 'state', 'start', 'play', 'pass', 'bots', 'addbot', 'removebot', 'sit', 'next', 'ready', 'leave', 'kick', 'dissolve', 'emperor', 'wind']);
+const API_ACTIONS = new Set(['create', 'join', 'state', 'start', 'play', 'pass', 'bots', 'addbot', 'removebot', 'sit', 'next', 'ready', 'leave', 'kick', 'dissolve', 'buy6', 'emperor', 'wind']);
 
 function handleApi(req, res, action) {
   readBody(req, res, (b) => {
@@ -129,6 +129,7 @@ function handleApi(req, res, action) {
       engine.applyAction(r, seat, action, {
         cards: b.cards,
         seat: b.seat,
+        seller: b.seller,
         windSeat: b.windSeat,
         yield: b.yield,
       });
@@ -195,7 +196,7 @@ function handle(req, res) {
     return serveStatic(req, res, entry);
   }
 
-  const m = u.pathname.match(/^\/api\/([a-z]+)\/?$/);
+  const m = u.pathname.match(/^\/api\/([a-z][a-z0-9]*)\/?$/);
   if (m && API_ACTIONS.has(m[1])) {
     if (req.method !== 'POST') return send(res, 405, { error: 'method not allowed', code: 'bad-name' });
     return handleApi(req, res, m[1]);

@@ -255,3 +255,13 @@ test('保皇房间持久化：重启后恢复手牌与阶段', { timeout: 60000 
     if (server) await stopServer(server);
   }
 });
+
+test('买6 动作路由可达：/api/buy6 不再返回 not found', async (t) => {
+  const server = await startServer();
+  t.after(() => stopServer(server));
+  const created = await api(server, 'create', { name: 'Host', game: 'baohuang' });
+  assert.equal(created.status, 200, JSON.stringify(created.body));
+  const r = await api(server, 'buy6', { room: created.body.room, token: 'bad-token', seller: 1, cards: [] });
+  assert.equal(r.status, 401, JSON.stringify(r.body));
+  assert.equal(r.body.code, 'auth');
+});

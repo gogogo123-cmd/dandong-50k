@@ -87,6 +87,7 @@ function createWs({ server, engine, heartbeatMs = 30000 }) {
       engine.applyAction(r, ws.seat, msg.action, {
         cards: msg.cards,
         seat: msg.seat,
+        seller: msg.seller,
         windSeat: msg.windSeat,
         yield: msg.yield,
       });

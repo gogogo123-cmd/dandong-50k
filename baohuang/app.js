@@ -32,6 +32,7 @@ let hintIndex = -1;
 let hintKey = '';
 let warnedDeadline = null;
 let lastPlaySigs = {};
+let buy6PayId = null;
 let client = null;
 
 const session = DD.session(SESSION_KEY);
@@ -399,6 +400,7 @@ function goHome() {
   windInitialized = false;
   lastHandKey = '';
   lastResultKey = '';
+  buy6PayId = null;
   saveAndClear();
   document.body.classList.remove('in-game');
   document.body.classList.remove('lobby-mode');
@@ -814,15 +816,18 @@ function renderBuy6Modal(s) {
   const modal = $('#buy6Modal');
   const open = s.started && !s.finished && s.phase === 'buy6' && s.buy6Seat === seat;
   modal.classList.toggle('show', open);
-  if (!open) return;
-  const pay = (s.hand || []).find((c) => c.id === s.buy6PaymentId);
-  $('#buy6Pay').innerHTML = pay
-    ? `将支付 <span class="pay-card">${DD.cardHTML(pay)}</span>`
+  if (!open) { buy6PayId = null; return; }
+  const payIds = s.buy6PayIds || [];
+  if (!payIds.includes(buy6PayId)) buy6PayId = payIds.length === 1 ? payIds[0] : null;
+  const payCards = (s.hand || []).filter((c) => payIds.includes(c.id));
+  $('#buy6Pay').innerHTML = payCards.length
+    ? `<span class="pay-hint">${payCards.length > 1 ? '选择支付牌' : '将支付'}</span>` + payCards.map((c) =>
+        `<button type="button" class="pay-choice${c.id === buy6PayId ? ' selected' : ''}" data-buy6pay="${c.id}" aria-pressed="${c.id === buy6PayId}">${DD.cardHTML(c)}</button>`).join('')
     : '你没有可支付的 2 或王，本局将重新发牌';
   $('#buy6List').innerHTML = (s.buy6Sellers || []).map(({ seat: i, extra }) => {
     const p = s.players?.[i];
     if (!p) return '';
-    return `<button type="button" data-buy6seller="${i}">${DD.esc(p.name)}<small>多 ${extra} 张6</small></button>`;
+    return `<button type="button" data-buy6seller="${i}"${buy6PayId ? '' : ' disabled'}>${DD.esc(p.name)}<small>多 ${extra} 张6</small></button>`;
   }).join('');
 }
 
@@ -1166,6 +1171,7 @@ async function joinRoom(mode, name) {
     windInitialized = false;
     lastHandKey = '';
     lastResultKey = '';
+    buy6PayId = null;
     selection.clear();
     saveSession();
     history.replaceState(null, '', '#room=' + roomId);
@@ -1221,11 +1227,18 @@ $('#playCards').onclick = playSelected;
 $('#passTurn').onclick = passTurn;
 $('#hint').onclick = useHint;
 $('#nextGame').onclick = () => doAction('next');
+$('#buy6Pay').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-buy6pay]');
+  if (!b || !state) return;
+  buy6PayId = b.dataset.buy6pay;
+  renderBuy6Modal(state);
+});
 $('#buy6List').addEventListener('click', (e) => {
   const b = e.target.closest('[data-buy6seller]');
-  if (!b) return;
+  if (!b || b.disabled) return;
+  if (!buy6PayId) return DD.notice('请先选择支付牌');
   DD.audio.ensure();
-  doAction('buy6', { seller: Number(b.dataset.buy6seller) });
+  doAction('buy6', { seller: Number(b.dataset.buy6seller), cards: [buy6PayId] });
 });
 $('#windList').addEventListener('click', (e) => {
   const b = e.target.closest('[data-wind]');

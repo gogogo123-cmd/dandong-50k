@@ -86,6 +86,17 @@ function buy6Actor(r) {
   return buyers.length ? buyers[0] : null;
 }
 
+// 当前买家可选的支付牌：仅限最高优先档（多个2/多张同档王由玩家自行选择花色）
+function buy6PayTier(hand) {
+  let bestP = Infinity;
+  for (const c of hand) {
+    const p = payPriority(c);
+    if (p >= 0 && p < bestP) bestP = p;
+  }
+  if (bestP === Infinity) return [];
+  return hand.filter((c) => payPriority(c) === bestP);
+}
+
 function actorSeat(r) {
   if (!r.started || r.finished) return null;
   if (r.phase === 'buy6') return buy6Actor(r);
@@ -839,6 +850,9 @@ function publicState(r, seat, helpers = {}) {
     buy6Buyers: r.phase === 'buy6' ? buy6Buyers(r) : [],
     buy6Sellers: r.phase === 'buy6'
       ? buy6Sellers(r).map((s) => ({ seat: s, extra: countSix(r.players[s].hand) - 1 }))
+      : [],
+    buy6PayIds: r.phase === 'buy6' && seat === buy6Actor(r)
+      ? buy6PayTier(r.players[seat]?.hand || []).map((c) => c.id)
       : [],
     buy6PaymentId: r.phase === 'buy6' && seat === buy6Actor(r)
       ? ((choosePayment(r.players[seat]?.hand || []) || {}).id || null)

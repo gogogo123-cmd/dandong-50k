@@ -298,6 +298,27 @@ test('手动买6：买方选卖方，支付优先级校验，完成后进入皇�
   assert.equal(r.turn, 2);
 });
 
+test('手动买6：同档支付牌由玩家自选花色', () => {
+  const twoA = c(15, 0);
+  const twoB = c(15, 2);
+  const hands = [
+    [twoA, twoB, c(7)],
+    [c(6), c(6), c(8)],
+    [c(6), c(9)],
+    [c(6), c(10)],
+    [c(6), c(11)],
+  ];
+  const r = makeRoom(hands, { phase: 'buy6', candidateSeat: 2, turn: 0, buy6Log: [] });
+  const state = bh.publicState(r, 0);
+  assert.deepEqual((state.buy6PayIds || []).slice().sort(), [twoA.id, twoB.id].sort(), '两个2都应可选');
+  action(r, 0, 'buy6', { seller: 1, cards: [twoB.id] });
+  assert.ok(r.players[0].hand.some((x) => x.id === twoA.id), '保留未选择的2');
+  assert.ok(!r.players[0].hand.some((x) => x.id === twoB.id));
+  assert.equal(r.buy6Log[0].paid.id, twoB.id);
+  assert.equal(r.buy6Log[0].paid.suit, twoB.suit);
+  assert.ok(r.players[1].hand.some((x) => x.id === twoB.id), '卖方得到玩家指定的2');
+});
+
 test('手动买6：卖方必须有多余6；机器人自动完成买6', () => {
   const hands = [
     [c(15, 0), c(7)],

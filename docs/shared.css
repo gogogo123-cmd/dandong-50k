@@ -616,7 +616,7 @@ body.lobby-mode .lobby-hint{display:block;font-size:clamp(10px,1.6vh,13px)}
 @keyframes winPop{0%{transform:scale(.55);opacity:0}60%{transform:scale(1.08);opacity:1}100%{transform:scale(1);opacity:1}}
 @keyframes confettiFall{0%{opacity:1;transform:translate3d(0,-20px,0) rotate(0)}100%{opacity:0;transform:translate3d(var(--dx,0px),62vh,0) rotate(700deg)}}
 /* 保皇：牌面身份/混儿/6 标识 */
-.card .card-tag{position:absolute;top:2px;right:2px;z-index:2;font-size:7px;line-height:1;padding:2px 3px;border-radius:3px;background:#e9c47a;color:#26352e;font-weight:700}
+.card .card-tag{position:absolute;bottom:2px;right:2px;z-index:2;font-size:7px;line-height:1;padding:2px 3px;border-radius:3px;background:#e9c47a;color:#26352e;font-weight:700}
 .card.wild{border-color:#7fd0c0;box-shadow:0 0 0 2px #2f8f7a55,0 3px 8px #00160f66}
 .card.six{border-color:#ff9f43;box-shadow:0 0 0 2px #ff9f4355,0 3px 8px #00160f66}
 .card.emperor{border-color:#e9c47a;box-shadow:0 0 10px #e9c47a99,0 3px 8px #00160f66}
