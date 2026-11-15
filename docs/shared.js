@@ -3,7 +3,7 @@
 (function () {
   const API_BASE = (window.DANDONG_API_BASE || '').replace(/\/+$/, '');
   const ASSET_PREFIX = window.DANDONG_ASSET_PREFIX || '/assets/';
-  const FACE_V = '?v=2';
+  const FACE_V = '?v=3';
   const jokerFaces = {
     small: ASSET_PREFIX + 'joker-small.svg' + FACE_V,
     big: ASSET_PREFIX + 'joker-big.svg' + FACE_V,
@@ -204,7 +204,7 @@
           const r = await api('state', { room: roomId, token });
           if (opts.onState) opts.onState(r.state, r.serverNow);
         } catch (e) {
-          if (e.code === 'auth' && opts.onAuthFail) opts.onAuthFail(e);
+          if (e.code === 'auth' && roomId && token && opts.onAuthFail) opts.onAuthFail(e);
         }
       }, 850);
     }
@@ -254,7 +254,7 @@
             if (opts.onHello) opts.onHello(m.seat);
             if (opts.onState) opts.onState(m.state, m.serverNow);
             banner('', false);
-          } else if (opts.onAuthFail) {
+          } else if (roomId && token && opts.onAuthFail) {
             opts.onAuthFail(new Error(m.message || '身份验证失败，请重新加入'));
           }
           return;
@@ -288,6 +288,9 @@
       try { if (ws) ws.close(); } catch {}
       ws = null;
       wsState = 'idle';
+      roomId = '';
+      token = '';
+      retry = 0;
       stopPolling();
       clearTimeout(retryTimer);
       retryTimer = null;

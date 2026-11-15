@@ -1,5 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 214 324" width="214" height="324">
 <rect x="0" y="0" width="214" height="324" rx="16" fill="#ffffff"/>
-<text x="18" y="74" font-family="Georgia, 'Times New Roman', 'Songti SC', serif" font-size="34" font-weight="700" fill="#17181a">J</text><text x="18" y="112" font-family="Georgia, 'Times New Roman', 'Songti SC', serif" font-size="34" font-weight="700" fill="#17181a">O</text><text x="18" y="150" font-family="Georgia, 'Times New Roman', 'Songti SC', serif" font-size="34" font-weight="700" fill="#17181a">K</text><text x="18" y="188" font-family="Georgia, 'Times New Roman', 'Songti SC', serif" font-size="34" font-weight="700" fill="#17181a">E</text><text x="18" y="226" font-family="Georgia, 'Times New Roman', 'Songti SC', serif" font-size="34" font-weight="700" fill="#17181a">R</text>
-<g fill="#17181a"><circle cx="60" cy="260" r="6"/><circle cx="107" cy="242" r="6"/><circle cx="154" cy="260" r="6"/><path d="M60 304 L60 268 L84 286 L107 252 L130 286 L154 268 L154 304 Z"/></g>
+<text x="20" y="64" font-family="'Times New Roman', 'Nimbus Roman', 'Songti SC', 'Noto Serif', serif" font-size="56" font-weight="700" fill="#17181a">J</text><text x="20" y="122" font-family="'Times New Roman', 'Nimbus Roman', 'Songti SC', 'Noto Serif', serif" font-size="56" font-weight="700" fill="#17181a">O</text><text x="20" y="180" font-family="'Times New Roman', 'Nimbus Roman', 'Songti SC', 'Noto Serif', serif" font-size="56" font-weight="700" fill="#17181a">K</text><text x="20" y="238" font-family="'Times New Roman', 'Nimbus Roman', 'Songti SC', 'Noto Serif', serif" font-size="56" font-weight="700" fill="#17181a">E</text><text x="20" y="296" font-family="'Times New Roman', 'Nimbus Roman', 'Songti SC', 'Noto Serif', serif" font-size="56" font-weight="700" fill="#17181a">R</text>
+<g transform="translate(134 170) scale(1.12) translate(-134 -170)">
+<path d="M96 146 C90 118 102 96 120 82 C125 104 129 119 134 128 Z" fill="#2b6cb0"/>
+<path d="M120 132 C126 100 131 86 134 74 C138 88 143 103 149 132 Z" fill="#e8a92c"/>
+<path d="M136 128 C140 116 146 102 152 82 C170 96 178 118 172 146 Z" fill="#d91f2b"/>
+<circle cx="119" cy="80" r="7" fill="#e9c26a" stroke="#b8892e" stroke-width="2"/>
+<circle cx="134" cy="71" r="7" fill="#e9c26a" stroke="#b8892e" stroke-width="2"/>
+<circle cx="153" cy="80" r="7" fill="#e9c26a" stroke="#b8892e" stroke-width="2"/>
+<circle cx="134" cy="176" r="44" fill="#f7e0bd" stroke="#d9b98c" stroke-width="3"/>
+<path d="M92 150 Q134 170 176 150 L176 160 Q134 180 92 160 Z" fill="#e9c26a"/>
+<circle cx="118" cy="168" r="5" fill="#2b2b2b"/><circle cx="150" cy="168" r="5" fill="#2b2b2b"/>
+<circle cx="110" cy="186" r="7" fill="#f2a99b"/><circle cx="158" cy="186" r="7" fill="#f2a99b"/>
+<circle cx="134" cy="182" r="6" fill="#d91f2b"/>
+<path d="M114 194 Q134 212 154 194" stroke="#b23b2b" stroke-width="4.5" fill="none" stroke-linecap="round"/>
+<path d="M88 218 Q134 248 180 218 L180 230 Q134 262 88 230 Z" fill="#2b6cb0"/>
+<path d="M88 230 Q134 262 180 230 L180 238 Q134 270 88 238 Z" fill="#d91f2b"/>
+</g>
 </svg>

@@ -38,7 +38,7 @@ let lastHandKey = '';
 
 const API_BASE = (window.DANDONG_API_BASE || '').replace(/\/+$/, '');
 const ASSET_PREFIX = window.DANDONG_ASSET_PREFIX || '../assets/';
-const FACE_V='?v=2';
+const FACE_V='?v=3';
 const jokerFaces={small:ASSET_PREFIX+'joker-small.svg'+FACE_V,big:ASSET_PREFIX+'joker-big.svg'+FACE_V};
 
 const SESSION_KEY = 'dandong50k-session';
@@ -1044,6 +1044,7 @@ function scheduleReconnect() {
 }
 
 function handleAuthFailure(e) {
+  if (!roomId) return;
   token = '';
   clearSession();
   if (ws) {

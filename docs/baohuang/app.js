@@ -1094,6 +1094,7 @@ function bindHandPointer() {
 /* ---------- 连接 ---------- */
 
 function handleAuthFailure(e) {
+  if (!roomId) return;
   token = '';
   saveAndClear();
   if (client) { client.close(); client = null; }
