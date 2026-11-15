@@ -3,9 +3,10 @@
 (function () {
   const API_BASE = (window.DANDONG_API_BASE || '').replace(/\/+$/, '');
   const ASSET_PREFIX = window.DANDONG_ASSET_PREFIX || '/assets/';
+  const FACE_V = '?v=2';
   const jokerFaces = {
-    small: ASSET_PREFIX + 'joker-small.svg',
-    big: ASSET_PREFIX + 'joker-big.svg',
+    small: ASSET_PREFIX + 'joker-small.svg' + FACE_V,
+    big: ASSET_PREFIX + 'joker-big.svg' + FACE_V,
   };
 
   function esc(value) {
@@ -105,7 +106,7 @@
       const alt = c.rank === 17 ? '大王' : '小王';
       return `<div class="card joker-face ${selected} ${animate}${role}" data-id="${c.id}">${badge}<img class="joker-art" src="${c.rank === 17 ? jokerFaces.big : jokerFaces.small}" alt="${alt}"></div>`;
     }
-    const src = `${ASSET_PREFIX}card-${SUIT_KEY[c.suit]}-${RANK_KEY[c.rank]}.svg`;
+    const src = `${ASSET_PREFIX}card-${SUIT_KEY[c.suit]}-${RANK_KEY[c.rank]}.svg` + FACE_V;
     return `<div class="card card-face ${selected} ${animate}${role}" data-id="${c.id}">${badge}<img class="card-img" src="${src}" alt="${rankLabel(c.rank)}${suitChar(c)}" draggable="false"></div>`;
   }
 
@@ -116,7 +117,7 @@
     preloaded = true;
     const srcs = [jokerFaces.small, jokerFaces.big];
     for (const suit of Object.values(SUIT_KEY)) {
-      for (const rank of Object.values(RANK_KEY)) srcs.push(`${ASSET_PREFIX}card-${suit}-${rank}.svg`);
+      for (const rank of Object.values(RANK_KEY)) srcs.push(`${ASSET_PREFIX}card-${suit}-${rank}.svg` + FACE_V);
     }
     for (const src of srcs) {
       const img = new Image();

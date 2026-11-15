@@ -38,7 +38,8 @@ let lastHandKey = '';
 
 const API_BASE = (window.DANDONG_API_BASE || '').replace(/\/+$/, '');
 const ASSET_PREFIX = window.DANDONG_ASSET_PREFIX || '../assets/';
-const jokerFaces={small:ASSET_PREFIX+'joker-small.svg',big:ASSET_PREFIX+'joker-big.svg'};
+const FACE_V='?v=2';
+const jokerFaces={small:ASSET_PREFIX+'joker-small.svg'+FACE_V,big:ASSET_PREFIX+'joker-big.svg'+FACE_V};
 
 const SESSION_KEY = 'dandong50k-session';
 
@@ -199,7 +200,7 @@ const PRELOADED_FACES = [];
 function preloadCardFaces() {
   const srcs = [jokerFaces.small, jokerFaces.big];
   for (const suit of Object.values(CARD_SUIT_KEY)) {
-    for (const rank of Object.values(CARD_RANK_KEY)) srcs.push(`${ASSET_PREFIX}card-${suit}-${rank}.svg`);
+    for (const rank of Object.values(CARD_RANK_KEY)) srcs.push(`${ASSET_PREFIX}card-${suit}-${rank}.svg`+FACE_V);
   }
   for (const src of srcs) {
     const img = new Image();
@@ -213,7 +214,7 @@ function cardHTML(c, selected = false, animate = false) {
   if (c.rank >= 16) {
     return `<div class="card joker-face ${selected ? 'selected' : ''} ${animate ? 'new-move' : ''}" data-id="${c.id}"><img class="joker-art" src="${c.rank === 17 ? jokerFaces.big : jokerFaces.small}" alt="${c.rank === 17 ? '大王' : '小王'}"></div>`;
   }
-  const src = `${ASSET_PREFIX}card-${CARD_SUIT_KEY[c.suit]}-${CARD_RANK_KEY[c.rank]}.svg`;
+  const src = `${ASSET_PREFIX}card-${CARD_SUIT_KEY[c.suit]}-${CARD_RANK_KEY[c.rank]}.svg`+FACE_V;
   const label = CARD_RANK_LABEL[c.rank] || c.rank;
   return `<div class="card card-face ${selected ? 'selected' : ''} ${animate ? 'new-move' : ''}" data-id="${c.id}"><img class="card-img" src="${src}" alt="${label}${suitChar(c)}" draggable="false"></div>`;
 }
