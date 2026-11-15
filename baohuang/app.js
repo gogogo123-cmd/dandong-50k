@@ -12,7 +12,6 @@ const RANK_NAME = ['头科', '二科', '三科', '二落', '大落'];
 const RANK_LABEL = { 6: '6', 7: '7', 8: '8', 9: '9', 10: '10', 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: '2', 16: '小王', 17: '大王' };
 const SUIT_LABEL = { 0: '♠', 1: '♥', 2: '♣', 3: '♦' };
 const PHASE_LABEL = { lobby: '候场', dealing: '发牌中', buy6: '买6中', emperor: '皇帝确认', playing: '打牌中', wind: '给风中', settlement: '结算' };
-const PHASE_STEPS = [['emperor', '买6/皇帝'], ['playing', '打牌'], ['wind', '给风'], ['settlement', '结算']];
 
 let state = null;
 let roomId = '';
@@ -432,6 +431,7 @@ function render(s) {
   if (dissolveBtn) dissolveBtn.style.display = s.started && seat === s.hostSeat ? 'inline-block' : 'none';
 
   renderCenter(s);
+  renderEmperorBomb(s);
   renderPlayers(s);
   renderMyPlay(s);
   renderMySeat(s);
@@ -443,41 +443,26 @@ function render(s) {
   $('#gameLog').textContent = (s.log || []).slice(-3).join('　·　');
 }
 
-function phaseSteps(s) {
-  const order = ['emperor', 'playing', 'wind', 'settlement'];
-  const cur = order.indexOf(s.phase);
-  return `<div class="phase-list">${PHASE_STEPS.map(([key, text], i) => {
-    const on = key === s.phase || (key === 'emperor' && (s.phase === 'dealing' || s.phase === 'buy6'));
-    return `<span class="phase-step ${on ? 'on' : ''}">${text}</span>`;
-  }).join('')}</div>`;
-}
-
 function renderCenter(s) {
   const box = $('#trickCenter');
   if (!s.started) {
     renderLobby(s);
     return;
   }
-  if (s.phase === 'dealing') {
-    box.innerHTML = '<div class="center-box"><div class="center-title">发牌中</div><div class="center-sub">正在发牌…</div></div>';
+  // 只有需要玩家操作的阶段才显示中间面板；打牌/结算阶段隐藏，避免遮挡出牌区。
+  if (s.phase !== 'buy6' && s.phase !== 'emperor' && s.phase !== 'wind') {
+    box.innerHTML = '';
     return;
   }
   if (s.phase === 'buy6') {
     const buyer = s.players?.[s.buy6Seat];
     const isMe = s.buy6Seat === seat;
     const sellers = (s.buy6Sellers || []).map(({ seat: i, extra }) => `${DD.esc(s.players?.[i]?.name || `${i + 1}号位`)}（多${extra}张）`).join('、');
-    const trades = (s.buy6Log || []).slice(-4).map((t) => {
-      const b = s.players?.[t.buyer]?.name || `${t.buyer + 1}号位`;
-      const sel = s.players?.[t.seller]?.name || `${t.seller + 1}号位`;
-      return `<div><b>${DD.esc(b)}</b> 用 ${DD.esc(paidLabel(t.paid))} 向 <b>${DD.esc(sel)}</b> 买6</div>`;
-    }).join('');
     box.innerHTML = `<div class="center-box">
-      ${phaseSteps(s)}
       <div class="center-title">买6中</div>
       <div class="center-sub">${isMe ? '轮到你买6，请选择出售多余6的玩家。' : `等待 <b>${DD.esc(buyer?.name || '')}</b> 买6。`}</div>
       <div class="center-sub">持有额外6：${sellers || '无'}</div>
       <div class="center-sub">支付优先使用 2 → 小王 → 大王。</div>
-      ${trades ? `<div class="buy6-log">${trades}</div>` : ''}
     </div>`;
     return;
   }
@@ -485,13 +470,7 @@ function renderCenter(s) {
     const cand = s.players?.[s.candidateSeat];
     const isMe = s.candidateSeat === seat;
     const triples = findTriplesClient(s.hand || []);
-    const trades = (s.buy6Log || []).slice(-4).map((t) => {
-      const buyer = s.players?.[t.buyer]?.name || `${t.buyer + 1}号位`;
-      const seller = s.players?.[t.seller]?.name || `${t.seller + 1}号位`;
-      return `<div><b>${DD.esc(buyer)}</b> 用 ${DD.esc(paidLabel(t.paid))} 向 <b>${DD.esc(seller)}</b> 买6</div>`;
-    }).join('');
     box.innerHTML = `<div class="center-box">
-      ${phaseSteps(s)}
       <div class="center-title">皇帝与侍卫确认</div>
       <div class="center-sub">候选人：<b>${DD.esc(cand?.name || '')}</b>${s.transferCount ? ` · 已让位 ${s.transferCount} 次` : ''}</div>
       <div class="center-sub">${isMe
@@ -499,44 +478,30 @@ function renderCenter(s) {
           ? `你有 ${triples.length} 组合法三张，请选择三张同花色同点数牌后点击“登基”。`
           : '你没有满足条件的三张牌，只能让位给上家。')
         : '等待候选人确认三张同花色同点数的牌。'}</div>
-      ${trades ? `<div class="buy6-log">${trades}</div>` : ''}
     </div>`;
     return;
   }
   if (s.phase === 'wind') {
     const giver = s.players?.[s.windGiverSeat]?.name || '';
     box.innerHTML = `<div class="center-box">
-      ${phaseSteps(s)}
       <div class="center-title">给风中</div>
       <div class="center-sub"><b>${DD.esc(giver)}</b> 已出完最后一张6，正在选择接风者。</div>
       <div class="center-sub">接风者将直接领出，无需压制上一手牌。</div>
     </div>`;
-    return;
   }
-  if (s.phase === 'settlement' || s.finished) {
-    const win = s.winnerCamp === 'emperor' ? '皇帝阵营获胜' : '革命党获胜';
-    box.innerHTML = `<div class="center-box">
-      ${phaseSteps(s)}
-      <div class="center-title">${win}</div>
-      <div class="center-sub">点击下方结算查看完整排名与身份。</div>
-    </div>`;
-    return;
-  }
+}
 
-  const actor = s.players?.[s.actorSeat];
-  let turnText = s.finished ? '本局结束' : s.actorSeat === seat ? '轮到你出牌' : `轮到${actor?.name || '玩家'}出牌`;
-  if (s.actorSeat === seat) turnText += s.lead && s.lead.seat !== seat ? ' · 超时自动不要' : ' · 超时自动出最小牌';
-  const lead = s.lead;
-  const leadCards = lead ? playedCardsHTML(s, lead.cards) : '';
-  const leadBomb = lead && isBombType(typeOf(lead.cards, ctxOf(s)));
-  const bombCards = (s.emperorTripleCards || []).map((c) => cardHTMLForState(s, c)).join('');
-  box.innerHTML = `<div class="center-box">
-    ${phaseSteps(s)}
-    <div class="center-title">打牌中</div>
-    ${bombCards ? `<div class="emperor-bomb">皇炸 ${bombCards}</div>` : ''}
-    <div class="center-sub">${DD.esc(turnText)}</div>
-    ${lead ? `<div class="lead-row ${leadBomb ? 'bomb-play' : ''}">${leadCards}</div><div class="lead-type">${DD.esc(leadTypeText(lead))}</div>` : '<div class="lead-type">新一轮，由最后出牌者领出</div>'}
-  </div>`;
+function renderEmperorBomb(s) {
+  const el = $('#emperorBomb');
+  if (!el) return;
+  const cards = s.started && !s.finished ? (s.emperorTripleCards || []) : [];
+  if (!cards.length) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.style.display = 'flex';
+  el.innerHTML = `<span class="eb-label">皇炸</span>${cards.map((c) => cardHTMLForState(s, c)).join('')}`;
 }
 
 function paidLabel(card) {
@@ -544,11 +509,6 @@ function paidLabel(card) {
   if (card.rank >= 16) return RANK_LABEL[card.rank];
   if (card.rank === RANK_SIX) return '6';
   return `${SUIT_LABEL[card.suit] || ''}${RANK_LABEL[card.rank]}`;
-}
-
-function leadTypeText(lead) {
-  const t = typeOf(lead.cards || [], { emperorIds: new Set(state?.emperorTripleIds || []), guardId: state?.guardCardId || null });
-  return t ? describeType(t) : '出牌';
 }
 
 function renderLobby(s) {
@@ -607,10 +567,10 @@ function cardHTMLForState(s, c, opts = {}) {
   let badge = '';
   if (emperor) { role = 'emperor'; badge = '皇'; }
   else if (guard) { role = 'guard'; badge = '侍'; }
-  else if (c.rank === RANK_SIX) { role = 'six'; badge = '6'; }
-  else if (c.rank === RANK_TWO || c.rank >= RANK_SMALL) { role = 'wild'; badge = '混'; }
+  else if (c.rank === RANK_SIX) { role = 'six'; }
+  else if (c.rank === RANK_TWO || c.rank >= RANK_SMALL) { role = 'wild'; }
   role = `${role} ${extra}`.trim();
-  if (special) { role = `${role} special`.trim(); badge = badge || '帝'; }
+  if (special) role = `${role} special`.trim();
   const { extraClass, ...rest } = opts;
   void extraClass;
   return DD.cardHTML(c, { ...rest, role, badge });
@@ -646,8 +606,9 @@ function renderPlayers(s) {
     const animate = psig && psig !== prevSigs[i];
     const online = p.bot ? '' : `<span class="online-dot ${p.online ? '' : 'off'}"></span>`;
     const rankTag = p.rank ? `<i class="seat-rank">${RANK_NAME[p.rank - 1]}</i>` : '';
-    const roleTag = p.emperor ? '皇帝' : p.guard ? '侍卫' : '';
-    const meta = `${online}${p.count}张${roleTag ? ` · ${roleTag}` : ''}${rankTag}`;
+    const roleTag = p.emperor ? '皇帝' : p.guard ? '侍卫' : (s.guardPublic ? '革命党' : '身份未知');
+    const roleClsAttr = p.emperor || p.guard || s.guardPublic ? '' : ' class="role-unknown"';
+    const meta = `${online}${p.count}张 · <span${roleClsAttr}>${roleTag}</span>${rankTag}`;
     let play = '';
     if (s.started && !s.finished) {
       const timer = active ? '<span class="seat-timer go show play-timer">--</span>' : '';
@@ -707,16 +668,51 @@ function renderMySeat(s) {
   el.title = `${me.name || '我'} · ${role === 'emperor' ? '皇帝' : role === 'guard' ? '侍卫' : '革命党'}`;
 }
 
-function sortHand(hand) {
+// 手牌排序：普通牌 → 炸弹（从小到大）→ 皇炸 → 侍卫牌，后三者固定在最右端。
+function bombPowers(hand, s) {
+  const powers = new Map();
+  const emperorSet = new Set(s?.emperorTripleIds || []);
+  for (const c of hand) if (emperorSet.has(c.id)) powers.set(c.id, 900 + c.rank);
+  const small = hand.filter((c) => c.rank === RANK_SMALL);
+  const big = hand.filter((c) => c.rank === RANK_BIG);
+  if (small.length >= 3) for (const c of small) powers.set(c.id, small.length >= 4 ? 400 : 200);
+  if (big.length >= 3) for (const c of big) powers.set(c.id, big.length >= 4 ? 500 : 300);
+  const groups = new Map();
+  for (const c of hand) {
+    if (c.rank === RANK_SIX || c.rank >= RANK_SMALL) continue;
+    const key = `${c.suit}-${c.rank}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  }
+  for (const arr of groups.values()) {
+    if (arr.length >= 4 && !arr.some((c) => emperorSet.has(c.id))) {
+      for (const c of arr) powers.set(c.id, 100 + c.rank);
+    }
+  }
+  return powers;
+}
+
+function sortHand(hand, s) {
+  const powers = bombPowers(hand, s);
+  const guardId = s?.guardCardId || null;
+  const rankOf = (c) => (c.rank === RANK_SIX ? 99 : c.rank);
   return [...(hand || [])].sort((a, b) => {
-    const ra = a.rank === RANK_SIX ? 99 : a.rank;
-    const rb = b.rank === RANK_SIX ? 99 : b.rank;
-    return ra - rb || a.suit - b.suit || a.id.localeCompare(b.id);
+    const ga = a.id === guardId ? 1 : 0;
+    const gb = b.id === guardId ? 1 : 0;
+    if (ga !== gb) return ga - gb;
+    const pa = powers.get(a.id);
+    const pb = powers.get(b.id);
+    if (pa !== undefined || pb !== undefined) {
+      if (pa === undefined) return -1;
+      if (pb === undefined) return 1;
+      if (pa !== pb) return pa - pb;
+    }
+    return rankOf(a) - rankOf(b) || a.suit - b.suit || a.id.localeCompare(b.id);
   });
 }
 
 function renderHand(s) {
-  const hand = sortHand(s.hand || []);
+  const hand = sortHand(s.hand || [], s);
   const isCandidate = s.phase === 'emperor' && s.candidateSeat === seat;
   const triples = isCandidate ? tripleIds(s) : new Set();
   const sig = `${hand.map((c) => c.id).join(',')}|${[...selection].sort().join(',')}|${s.emperorTripleIds?.join(',')}|${s.guardCardId || ''}|${isCandidate ? [...triples].sort().join(',') : ''}`;
@@ -874,7 +870,7 @@ function renderRoundModal(s) {
   const remaining = (s.players || []).map((p, i) => ({ p, i })).filter(({ p }) => p && Array.isArray(p.remaining) && p.remaining.length);
   $('#roundHands').innerHTML = remaining.length
     ? `<div class="reveal-title">未出完手牌</div>` + remaining.map(({ p, i }) => {
-      const hand = sortHand(p.remaining);
+      const hand = sortHand(p.remaining, s);
       return `<div class="reveal-row"><div class="reveal-name">${i === seat ? '你' : DD.esc(p.name)}<small>剩 ${hand.length} 张</small></div><div class="reveal-cards">${hand.map((c) => cardHTMLForState(s, c)).join('')}</div></div>`;
     }).join('')
     : '<div class="reveal-none">所有玩家均已出完</div>';

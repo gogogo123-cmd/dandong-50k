@@ -643,3 +643,5 @@ body.lobby-mode .lobby-hint{display:block;font-size:clamp(10px,1.6vh,13px)}
   .played-cards .card{width:clamp(36px,4.4vw,44px);height:auto!important;margin-left:-6px}
   .player-play{max-width:220px}
 }
+.home-back{color:var(--gold);text-decoration:none;font-size:12px;font-weight:700;border:1px solid #e9c47a66;border-radius:999px;padding:4px 10px;white-space:nowrap;line-height:1.2}
+.home-back:hover{background:#e9c47a1a}
