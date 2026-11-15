@@ -2,10 +2,10 @@
   "name": "dandong-50k-six-player",
   "version": "1.0.0",
   "private": true,
-  "description": "六人三副牌丹东五十K在线牌桌",
+  "description": "2301桌游：六人五十K与五人保皇在线牌桌",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/smoke.test.js test/rules.test.js"
+    "test": "node --test test/smoke.test.js test/rules.test.js test/baohuang-rules.test.js test/baohuang-engine.test.js test/baohuang-smoke.test.js"
   },
   "engines": {
     "node": ">=20"

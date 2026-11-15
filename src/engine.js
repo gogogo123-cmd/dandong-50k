@@ -4,17 +4,12 @@
 const crypto = require('crypto');
 const rules = require('./rules');
 const { classify, beats, teamName, startGame, nextGame, finishCard, passTurn, botAct } = rules;
+const baohuang = require('./baohuang/engine');
+const { GameError } = require('./errors');
 
 const MAX_ROOMS = 500;
 const PRESENCE_MS = 15000;
-
-class GameError extends Error {
-  constructor(code, message, status) {
-    super(message);
-    this.code = code;
-    this.status = status || 400;
-  }
-}
+const GAMES = new Set(['50k', 'baohuang']);
 
 function cleanName(raw) {
   if (typeof raw !== 'string') throw new GameError('bad-name', '请输入昵称', 400);
@@ -28,32 +23,20 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(String(token)).digest('hex');
 }
 
-function emptyRoom(id) {
-  return {
+function emptyRoom(id, game = '50k') {
+  const numSeats = game === 'baohuang' ? 5 : 6;
+  const base = {
     id,
-    players: Array(6).fill(null),
-    teams: [0, 1, 0, 1, 0, 1],
-    positions: [0, 1, 2, 3, 4, 5],
-    playedBy: Array(6).fill(null),
-    passed: Array(6).fill(false),
+    game,
+    numSeats,
+    players: Array(numSeats).fill(null),
     closed: false,
     started: false,
     turn: 0,
     lead: null,
     passes: 0,
     finished: false,
-    bigEmperor: null,
-    scores: [0, 0],
-    trickPoints: 0,
-    gamesPlayed: 0,
-    bigSet: 1,
-    matchResults: [],
     log: [],
-    windSeq: 0,
-    lastWind: null,
-    roundWinner: null,
-    leftoverPoints: 0,
-    penalty: 0,
     version: 0,
     turnDeadline: null,
     lastActivityAt: Date.now(),
@@ -63,6 +46,26 @@ function emptyRoom(id) {
     _turnTimer: null,
     _botTimer: null,
   };
+  if (game === 'baohuang') {
+    return Object.assign(base, baohuang.emptyRoomFields());
+  }
+  return Object.assign(base, {
+    teams: [0, 1, 0, 1, 0, 1],
+    positions: [0, 1, 2, 3, 4, 5],
+    playedBy: Array(6).fill(null),
+    passed: Array(6).fill(false),
+    bigEmperor: null,
+    scores: [0, 0],
+    trickPoints: 0,
+    gamesPlayed: 0,
+    bigSet: 1,
+    matchResults: [],
+    windSeq: 0,
+    lastWind: null,
+    roundWinner: null,
+    leftoverPoints: 0,
+    penalty: 0,
+  });
 }
 
 function isCard(c) {
@@ -94,7 +97,7 @@ function createEngine({ config, store }) {
   function findSeatByToken(r, token) {
     if (typeof token !== 'string' || !token) return -1;
     const wanted = Buffer.from(hashToken(token), 'hex');
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < r.numSeats; i++) {
       const p = r.players[i];
       if (!p || !p.tokenHash) continue;
       const stored = Buffer.from(p.tokenHash, 'hex');
@@ -128,6 +131,9 @@ function createEngine({ config, store }) {
   }
 
   function publicState(r, seat) {
+    if (r.game === 'baohuang') {
+      return baohuang.publicState(r, seat, { isOnline, config, canStart });
+    }
     return {
       id: r.id,
       players: r.players.map((p, i) => p && ({
@@ -186,14 +192,15 @@ function createEngine({ config, store }) {
     if (store) store.scheduleSave(rooms);
   }
 
-  function createRoom(rawName) {
+  function createRoom(rawName, rawGame = '50k') {
+    const game = GAMES.has(rawGame) ? rawGame : '50k';
     const name = cleanName(rawName);
     ensureCapacity();
     let id;
     do {
       id = crypto.randomBytes(3).toString('hex').toUpperCase();
     } while (rooms.has(id));
-    const r = emptyRoom(id);
+    const r = emptyRoom(id, game);
     const { player, token } = newPlayer(name);
     r.players[0] = player;
     r.hostSeat = 0;
@@ -203,8 +210,11 @@ function createEngine({ config, store }) {
     return { room: r, seat: 0, token };
   }
 
-  function joinRoom(roomId, rawName) {
+  function joinRoom(roomId, rawName, game) {
     const r = getRoom(roomId);
+    if (game && GAMES.has(game) && r.game !== game) {
+      throw new GameError('wrong-game', '该房间码属于另一款游戏', 409);
+    }
     if (r.started) throw new GameError('started', '牌局已开始，无法加入', 409);
     const name = cleanName(rawName);
     const seat = r.players.findIndex((p) => !p);
@@ -238,11 +248,12 @@ function createEngine({ config, store }) {
   }
 
   function transferHost(r, from) {
+    const n = r.numSeats;
     const fromPos = r.positions?.[from] ?? from;
-    for (let step = 1; step <= 6; step++) {
-      const pos = (fromPos + step) % 6;
+    for (let step = 1; step <= n; step++) {
+      const pos = (fromPos + step) % n;
       const i = r.positions?.indexOf(pos) ?? pos;
-      if (i >= 0 && i < 6 && r.players[i] && !r.players[i].bot) {
+      if (i >= 0 && i < n && r.players[i] && !r.players[i].bot) {
         r.hostSeat = i;
         return true;
       }
@@ -320,14 +331,20 @@ function createEngine({ config, store }) {
     if (action === 'start') {
       if (r.started) throw new GameError('started', '牌局已经开始', 409);
       if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以开始游戏', 403);
-      if (r.players.some((x) => !x)) throw new GameError('full', '需要六位玩家全部入座', 409);
+      if (r.players.some((x) => !x)) throw new GameError('full', `需要${r.numSeats}位玩家全部入座`, 409);
       if (!canStart(r)) throw new GameError('not-ready', '还有玩家未准备', 409);
-      startGame(r);
+      if (r.game === 'baohuang') baohuang.startGame(r);
+      else startGame(r);
       return afterMutation(r);
     }
 
     if (action === 'next') {
       if (!r.finished) throw new GameError('finished', '本小局尚未结束', 409);
+      if (r.game === 'baohuang') {
+        if (seat !== r.hostSeat) throw new GameError('host-only', '等待房主开始下一局', 403);
+        baohuang.nextGame(r);
+        return afterMutation(r);
+      }
       if (r.gamesPlayed >= 3 && seat !== r.hostSeat) {
         throw new GameError('host-only', '三小局已结束，等待房主重新分组', 403);
       }
@@ -354,7 +371,7 @@ function createEngine({ config, store }) {
       if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以踢人', 403);
       if (r.started) throw new GameError('started', '牌局已经开始了', 409);
       const target = Number(payload.seat);
-      if (!Number.isInteger(target) || target < 0 || target > 5 || target === seat) {
+      if (!Number.isInteger(target) || target < 0 || target >= r.numSeats || target === seat) {
         throw new GameError('bad-target', '无效的目标座位', 400);
       }
       const tp = r.players[target];
@@ -374,7 +391,7 @@ function createEngine({ config, store }) {
       if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以加入机器人', 403);
       if (r.started) throw new GameError('started', '牌局已经开始', 409);
       const target = Number(payload.seat);
-      if (!Number.isInteger(target) || target < 0 || target > 5) {
+      if (!Number.isInteger(target) || target < 0 || target >= r.numSeats) {
         throw new GameError('bad-target', '无效的目标座位', 400);
       }
       if (r.players[target]) throw new GameError('bad-target', '该座位已有玩家', 409);
@@ -386,7 +403,7 @@ function createEngine({ config, store }) {
       if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以移除机器人', 403);
       if (r.started) throw new GameError('started', '牌局已经开始', 409);
       const target = Number(payload.seat);
-      if (!Number.isInteger(target) || target < 0 || target > 5) {
+      if (!Number.isInteger(target) || target < 0 || target >= r.numSeats) {
         throw new GameError('bad-target', '无效的目标座位', 400);
       }
       const tp = r.players[target];
@@ -398,7 +415,7 @@ function createEngine({ config, store }) {
     if (action === 'sit') {
       if (r.started) throw new GameError('started', '牌局已经开始', 409);
       const target = Number(payload.seat);
-      if (!Number.isInteger(target) || target < 0 || target > 5 || target === seat) {
+      if (!Number.isInteger(target) || target < 0 || target >= r.numSeats || target === seat) {
         throw new GameError('bad-target', '无效的目标座位', 400);
       }
       if (r.players[target]) throw new GameError('bad-target', '该座位已有玩家', 409);
@@ -420,14 +437,20 @@ function createEngine({ config, store }) {
       if (seat !== r.hostSeat) throw new GameError('host-only', '只有房主可以加入机器人', 403);
       if (r.started) throw new GameError('started', '牌局已经开始', 409);
       const target = Number(payload.seat);
-      if (Number.isInteger(target) && target >= 0 && target <= 5) {
+      if (Number.isInteger(target) && target >= 0 && target < r.numSeats) {
         if (r.players[target]) throw new GameError('bad-target', '该座位已有玩家', 409);
         r.players[target] = newPlayer(`机器人${target}`, true).player;
         return afterMutation(r);
       }
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < r.numSeats; i++) {
         if (!r.players[i]) r.players[i] = newPlayer(`机器人${i}`, true).player;
       }
+      return afterMutation(r);
+    }
+
+    if (r.game === 'baohuang') {
+      if (!r.started) throw new GameError('finished', '牌局尚未开始', 409);
+      baohuang.applyAction(r, seat, action, payload);
       return afterMutation(r);
     }
 
@@ -467,30 +490,60 @@ function createEngine({ config, store }) {
     }
   }
 
-  function armTurn(r) {
+  function turnActor(r) {
+    if (r.game === 'baohuang') return baohuang.actorSeat(r);
+    if (!r.started || r.finished) return null;
+    return r.turn;
+  }
+
+  function armTurn(r, keepDeadline = false) {
     clearTimers(r);
-    if (!r.started || r.finished || r.closed) {
+    if (r.closed) {
       r.turnDeadline = null;
       return;
     }
-    const seat = r.turn;
+    const seat = turnActor(r);
+    if (seat == null || seat < 0 || !r.players[seat]) {
+      r.turnDeadline = null;
+      return;
+    }
     const version = r.version;
-    const deadline = Date.now() + config.TURN_SECONDS * 1000;
+    const deadline = keepDeadline && typeof r.turnDeadline === 'number'
+      ? r.turnDeadline
+      : Date.now() + config.TURN_SECONDS * 1000;
     r.turnDeadline = deadline;
-    r._turnTimer = setTimeout(() => onTurnTimeout(r.id, seat, version, deadline), config.TURN_SECONDS * 1000 + 25);
+    const wait = Math.max(25, deadline - Date.now() + 25);
+    r._turnTimer = setTimeout(() => onTurnTimeout(r.id, seat, version, deadline), wait);
     if (r.players[seat]?.bot) {
       r._botTimer = setTimeout(() => onBot(r.id, seat, version), config.BOT_DELAY_MS);
     }
   }
 
   function isCurrentTurn(r, seat, version, deadline) {
-    return !!r && r.version === version && r.turn === seat && r.turnDeadline === deadline
-      && r.started && !r.finished && !!r.players[seat] && !r.players[seat].done;
+    if (!r || r.version !== version || r.turnDeadline !== deadline || !r.started || r.finished) return false;
+    if (!r.players[seat]) return false;
+    if (r.game === 'baohuang') {
+      // 给风阶段的操作者已经出完牌（done=true），仍需允许超时。
+      if (r.phase !== 'wind' && r.players[seat].done) return false;
+      return baohuang.actorSeat(r) === seat;
+    }
+    if (r.players[seat].done) return false;
+    return r.turn === seat;
   }
 
   function onTurnTimeout(id, seat, version, deadline) {
     const r = rooms.get(id);
     if (!isCurrentTurn(r, seat, version, deadline)) return;
+    if (r.game === 'baohuang') {
+      try {
+        baohuang.onTimeout(r);
+      } catch (e) {
+        console.error('baohuang timeout action failed', e);
+        return;
+      }
+      afterMutation(r);
+      return;
+    }
     const p = r.players[seat];
     try {
       if (r.lead) {
@@ -511,7 +564,20 @@ function createEngine({ config, store }) {
 
   function onBot(id, seat, version) {
     const r = rooms.get(id);
-    if (!r || r.version !== version || r.turn !== seat || !r.started || r.finished) return;
+    if (!r || r.version !== version || !r.started || r.finished) return;
+    if (r.game === 'baohuang') {
+      const p = r.players[seat];
+      if (!p?.bot || baohuang.actorSeat(r) !== seat) return;
+      try {
+        baohuang.onBot(r);
+      } catch (e) {
+        console.error('baohuang bot action failed', e);
+        return;
+      }
+      afterMutation(r);
+      return;
+    }
+    if (r.turn !== seat) return;
     const p = r.players[seat];
     if (!p?.bot || p.done) return;
     try {
@@ -561,8 +627,9 @@ function createEngine({ config, store }) {
   }
 
   function normalizeHost(r) {
+    const n = r.numSeats;
     let h = r.hostSeat;
-    if (!(Number.isInteger(h) && h >= 0 && h < 6 && r.players[h] && !r.players[h].bot)) {
+    if (!(Number.isInteger(h) && h >= 0 && h < n && r.players[h] && !r.players[h].bot)) {
       h = r.players.findIndex((p) => p && !p.bot);
       if (h < 0) h = 0;
       r.hostSeat = h;
@@ -573,9 +640,11 @@ function createEngine({ config, store }) {
     if (!rec || typeof rec !== 'object' || typeof rec.id !== 'string' || !/^[0-9A-F]{6}$/.test(rec.id)) {
       throw new Error('bad room record');
     }
-    const r = emptyRoom(rec.id);
-    const players = Array.isArray(rec.players) ? rec.players.slice(0, 6) : [];
-    while (players.length < 6) players.push(null);
+    const game = rec.game === 'baohuang' ? 'baohuang' : '50k';
+    const n = game === 'baohuang' ? 5 : 6;
+    const r = emptyRoom(rec.id, game);
+    const players = Array.isArray(rec.players) ? rec.players.slice(0, n) : [];
+    while (players.length < n) players.push(null);
     r.players = players.map((p) => (p && typeof p === 'object' ? {
       name: String(p.name || '玩家').slice(0, 12),
       hand: Array.isArray(p.hand) ? p.hand.filter(isCard).map((c) => ({ ...c })) : [],
@@ -583,37 +652,47 @@ function createEngine({ config, store }) {
       done: !!p.done,
       ready: p.ready === undefined ? true : !!p.ready,
       tokenHash: typeof p.tokenHash === 'string' ? p.tokenHash : null,
+      rank: Number.isInteger(p.rank) ? p.rank : null,
     } : null));
-    const six = (v, dflt) => (Array.isArray(v) && v.length === 6 ? v.slice() : dflt);
-    r.teams = six(rec.teams, [0, 1, 0, 1, 0, 1]).map((x) => (x === 1 ? 1 : 0));
-    r.positions = six(rec.positions, [0, 1, 2, 3, 4, 5]).map((x) => (Number.isInteger(x) ? x : 0));
-    r.playedBy = Array.from({ length: 6 }, (_, i) => (Array.isArray(rec.playedBy?.[i])
-      ? rec.playedBy[i].filter(isCard).map((c) => ({ ...c })) : null));
-    r.passed = six(rec.passed, Array(6).fill(false)).map(Boolean);
     r.closed = false;
     r.started = !!rec.started;
-    r.turn = Number.isInteger(rec.turn) && rec.turn >= 0 && rec.turn < 6 ? rec.turn : 0;
+    r.turn = Number.isInteger(rec.turn) && rec.turn >= 0 && rec.turn < n ? rec.turn : 0;
     r.lead = rec.lead && typeof rec.lead === 'object' && Array.isArray(rec.lead.cards) ? { ...rec.lead } : null;
     r.passes = Number(rec.passes) || 0;
     r.finished = !!rec.finished;
-    r.bigEmperor = Number.isInteger(rec.bigEmperor) ? rec.bigEmperor : null;
-    r.scores = (Array.isArray(rec.scores) && rec.scores.length === 2 ? rec.scores.slice() : [0, 0]).map((x) => Number(x) || 0);
-    r.trickPoints = Number(rec.trickPoints) || 0;
-    r.gamesPlayed = Number(rec.gamesPlayed) || 0;
-    r.bigSet = Number(rec.bigSet) || 1;
-    r.matchResults = Array.isArray(rec.matchResults) ? rec.matchResults.slice(-50) : [];
-    r.log = Array.isArray(rec.log) ? rec.log.slice(-200).map(String) : [];
-    r.windSeq = Number.isInteger(rec.windSeq) ? rec.windSeq : 0;
-    r.lastWind = rec.lastWind && Number.isInteger(rec.lastWind.seat)
-      ? { seat: rec.lastWind.seat, leader: Number.isInteger(rec.lastWind.leader) ? rec.lastWind.leader : null, seq: Number(rec.lastWind.seq) || 0 }
-      : null;
-    r.roundWinner = Number.isInteger(rec.roundWinner) ? rec.roundWinner : null;
-    r.leftoverPoints = Number(rec.leftoverPoints) || 0;
-    r.penalty = Number(rec.penalty) || 0;
     r.version = Number.isInteger(rec.version) ? rec.version : 0;
     r.turnDeadline = typeof rec.turnDeadline === 'number' ? rec.turnDeadline : null;
     r.hostSeat = Number.isInteger(rec.hostSeat) ? rec.hostSeat : 0;
     r.lastActivityAt = Number(rec.lastActivityAt) || Date.now();
+    r.gamesPlayed = Number(rec.gamesPlayed) || 0;
+
+    if (game === 'baohuang') {
+      r.log = Array.isArray(rec.log) ? rec.log.slice(-200).map(String) : [];
+      r.passed = Array.from({ length: n }, (_, i) => !!(rec.passed && rec.passed[i]));
+      r.playedBy = Array.from({ length: n }, (_, i) => (Array.isArray(rec.playedBy?.[i])
+        ? rec.playedBy[i].filter(isCard).map((c) => ({ ...c })) : null));
+      baohuang.normalize(r, rec);
+    } else {
+      const six = (v, dflt) => (Array.isArray(v) && v.length === 6 ? v.slice() : dflt);
+      r.teams = six(rec.teams, [0, 1, 0, 1, 0, 1]).map((x) => (x === 1 ? 1 : 0));
+      r.positions = six(rec.positions, [0, 1, 2, 3, 4, 5]).map((x) => (Number.isInteger(x) ? x : 0));
+      r.playedBy = Array.from({ length: 6 }, (_, i) => (Array.isArray(rec.playedBy?.[i])
+        ? rec.playedBy[i].filter(isCard).map((c) => ({ ...c })) : null));
+      r.passed = six(rec.passed, Array(6).fill(false)).map(Boolean);
+      r.bigEmperor = Number.isInteger(rec.bigEmperor) ? rec.bigEmperor : null;
+      r.scores = (Array.isArray(rec.scores) && rec.scores.length === 2 ? rec.scores.slice() : [0, 0]).map((x) => Number(x) || 0);
+      r.trickPoints = Number(rec.trickPoints) || 0;
+      r.bigSet = Number(rec.bigSet) || 1;
+      r.matchResults = Array.isArray(rec.matchResults) ? rec.matchResults.slice(-50) : [];
+      r.log = Array.isArray(rec.log) ? rec.log.slice(-200).map(String) : [];
+      r.windSeq = Number.isInteger(rec.windSeq) ? rec.windSeq : 0;
+      r.lastWind = rec.lastWind && Number.isInteger(rec.lastWind.seat)
+        ? { seat: rec.lastWind.seat, leader: Number.isInteger(rec.lastWind.leader) ? rec.lastWind.leader : null, seq: Number(rec.lastWind.seq) || 0 }
+        : null;
+      r.roundWinner = Number.isInteger(rec.roundWinner) ? rec.roundWinner : null;
+      r.leftoverPoints = Number(rec.leftoverPoints) || 0;
+      r.penalty = Number(rec.penalty) || 0;
+    }
     normalizeHost(r);
     return r;
   }
@@ -633,19 +712,13 @@ function createEngine({ config, store }) {
 
   function resumeTurn(r) {
     clearTimers(r);
-    if (!r.started || r.finished) {
+    const seat = turnActor(r);
+    if (seat == null) {
       r.turnDeadline = null;
       return;
     }
     if (typeof r.turnDeadline !== 'number') r.turnDeadline = Date.now() + config.TURN_SECONDS * 1000;
-    const seat = r.turn;
-    const version = r.version;
-    const deadline = r.turnDeadline;
-    const wait = Math.max(100, deadline - Date.now() + 25);
-    r._turnTimer = setTimeout(() => onTurnTimeout(r.id, seat, version, deadline), wait);
-    if (r.players[seat]?.bot) {
-      r._botTimer = setTimeout(() => onBot(r.id, seat, version), config.BOT_DELAY_MS);
-    }
+    armTurn(r, true);
   }
 
   function cleanup() {

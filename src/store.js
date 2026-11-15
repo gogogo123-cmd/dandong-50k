@@ -3,12 +3,15 @@
 
 const fs = require('fs');
 const path = require('path');
+const baohuang = require('./baohuang/engine');
 
 const SCHEMA = 1;
 
 function serializeRoom(r) {
-  return {
+  const common = {
     id: r.id,
+    game: r.game || '50k',
+    numSeats: r.numSeats || 6,
     players: r.players.map((p) => (p ? {
       name: p.name,
       hand: p.hand,
@@ -16,9 +19,8 @@ function serializeRoom(r) {
       done: !!p.done,
       ready: !!p.ready,
       tokenHash: p.tokenHash || null,
+      rank: p.rank ?? null,
     } : null)),
-    teams: r.teams,
-    positions: r.positions,
     playedBy: r.playedBy,
     passed: r.passed,
     started: r.started,
@@ -26,22 +28,28 @@ function serializeRoom(r) {
     lead: r.lead,
     passes: r.passes,
     finished: r.finished,
+    gamesPlayed: r.gamesPlayed,
+    log: (r.log || []).slice(-200),
+    version: r.version,
+    turnDeadline: r.turnDeadline ?? null,
+    hostSeat: r.hostSeat,
+    lastActivityAt: r.lastActivityAt,
+  };
+  if (r.game === 'baohuang') return { ...common, ...baohuang.serialize(r) };
+  return {
+    ...common,
+    teams: r.teams,
+    positions: r.positions,
     bigEmperor: r.bigEmperor,
     scores: r.scores,
     trickPoints: r.trickPoints,
-    gamesPlayed: r.gamesPlayed,
     bigSet: r.bigSet,
     matchResults: r.matchResults,
-    log: (r.log || []).slice(-200),
     windSeq: r.windSeq || 0,
     lastWind: r.lastWind || null,
     roundWinner: r.roundWinner,
     leftoverPoints: r.leftoverPoints,
     penalty: r.penalty,
-    version: r.version,
-    turnDeadline: r.turnDeadline ?? null,
-    hostSeat: r.hostSeat,
-    lastActivityAt: r.lastActivityAt,
   };
 }
 

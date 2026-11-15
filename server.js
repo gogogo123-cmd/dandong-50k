@@ -37,7 +37,14 @@ const engine = createEngine({ config, store });
 const STATIC = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8', cache: 'no-cache' },
   '/index.html': { file: 'index.html', type: 'text/html; charset=utf-8', cache: 'no-cache' },
-  '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8', cache: 'no-cache' },
+  '/shared.css': { file: 'shared.css', type: 'text/css; charset=utf-8', cache: 'no-cache' },
+  '/shared.js': { file: 'shared.js', type: 'text/javascript; charset=utf-8', cache: 'no-cache' },
+  '/50k/': { file: '50k/index.html', type: 'text/html; charset=utf-8', cache: 'no-cache' },
+  '/50k/index.html': { file: '50k/index.html', type: 'text/html; charset=utf-8', cache: 'no-cache' },
+  '/50k/app.js': { file: '50k/app.js', type: 'text/javascript; charset=utf-8', cache: 'no-cache' },
+  '/baohuang/': { file: 'baohuang/index.html', type: 'text/html; charset=utf-8', cache: 'no-cache' },
+  '/baohuang/index.html': { file: 'baohuang/index.html', type: 'text/html; charset=utf-8', cache: 'no-cache' },
+  '/baohuang/app.js': { file: 'baohuang/app.js', type: 'text/javascript; charset=utf-8', cache: 'no-cache' },
   '/assets/joker-big.png': { file: 'assets/joker-big.png', type: 'image/png', cache: 'public, max-age=3600' },
   '/assets/joker-small.png': { file: 'assets/joker-small.png', type: 'image/png', cache: 'public, max-age=3600' },
   '/manifest.json': { file: 'manifest.json', type: 'application/manifest+json', cache: 'no-cache' },
@@ -102,24 +109,29 @@ function readBody(req, res, cb) {
   req.on('error', () => {});
 }
 
-const API_ACTIONS = new Set(['create', 'join', 'state', 'start', 'play', 'pass', 'bots', 'addbot', 'removebot', 'sit', 'next', 'ready', 'leave', 'kick', 'dissolve']);
+const API_ACTIONS = new Set(['create', 'join', 'state', 'start', 'play', 'pass', 'bots', 'addbot', 'removebot', 'sit', 'next', 'ready', 'leave', 'kick', 'dissolve', 'emperor', 'wind']);
 
 function handleApi(req, res, action) {
   readBody(req, res, (b) => {
     try {
       if (action === 'create') {
-        const { room, seat, token } = engine.createRoom(b.name);
+        const { room, seat, token } = engine.createRoom(b.name, b.game);
         return send(res, 200, { room: room.id, seat, token, state: engine.publicState(room, seat) });
       }
       if (action === 'join') {
-        const { room, seat, token } = engine.joinRoom(b.room, b.name);
+        const { room, seat, token } = engine.joinRoom(b.room, b.name, b.game);
         return send(res, 200, { room: room.id, seat, token, state: engine.publicState(room, seat) });
       }
       const { r, seat } = engine.authorize(b.room, b.token);
       if (action === 'state') {
         return send(res, 200, { state: engine.publicState(r, seat), serverNow: Date.now() });
       }
-      engine.applyAction(r, seat, action, { cards: b.cards, seat: b.seat });
+      engine.applyAction(r, seat, action, {
+        cards: b.cards,
+        seat: b.seat,
+        windSeat: b.windSeat,
+        yield: b.yield,
+      });
       let nowSeat = seat;
       try { nowSeat = engine.requireSeat(r, b.token); } catch {}
       return send(res, 200, { seat: nowSeat, state: engine.publicState(r, nowSeat) });
@@ -165,6 +177,11 @@ function handle(req, res) {
     return res.end();
   }
 
+  if (u.pathname === '/50k' || u.pathname === '/baohuang') {
+    res.writeHead(301, { location: `${u.pathname}/${u.search}` });
+    return res.end();
+  }
+
   const staticEntry = STATIC[u.pathname];
   if (staticEntry) {
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method not allowed', code: 'bad-name' });
@@ -196,7 +213,7 @@ engine.startCleanup();
 server.listen(config.PORT, () => {
   const addr = server.address();
   const port = addr && typeof addr === 'object' ? addr.port : config.PORT;
-  console.log(`丹东五十K listening on ${port}`);
+  console.log(`2301桌游 listening on ${port}`);
   console.log(`DATA_DIR=${config.DATA_DIR} TURN_SECONDS=${config.TURN_SECONDS} SAVE_DEBOUNCE_MS=${config.SAVE_DEBOUNCE_MS}`);
 });
 

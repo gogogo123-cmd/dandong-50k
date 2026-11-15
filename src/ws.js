@@ -84,7 +84,12 @@ function createWs({ server, engine, heartbeatMs = 30000 }) {
       return;
     }
     try {
-      engine.applyAction(r, ws.seat, msg.action, { cards: msg.cards, seat: msg.seat });
+      engine.applyAction(r, ws.seat, msg.action, {
+        cards: msg.cards,
+        seat: msg.seat,
+        windSeat: msg.windSeat,
+        yield: msg.yield,
+      });
       send(ws, { type: 'ack', requestId, ok: true });
     } catch (e) {
       send(ws, {

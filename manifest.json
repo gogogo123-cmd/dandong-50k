@@ -1,7 +1,7 @@
 {
-  "name": "丹东五十K · 六人局",
-  "short_name": "五十K",
-  "description": "六人丹东五十K在线牌桌",
+  "name": "2301桌游 · 五十K/保皇",
+  "short_name": "2301桌游",
+  "description": "2301桌游：六人五十K与五人保皇在线牌桌",
   "lang": "zh-CN",
   "start_url": "./",
   "scope": "./",
@@ -10,7 +10,17 @@
   "background_color": "#082820",
   "theme_color": "#10503e",
   "icons": [
-    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }

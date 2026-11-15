@@ -37,7 +37,7 @@ let lastResultSig = '';
 let lastHandKey = '';
 
 const API_BASE = (window.DANDONG_API_BASE || '').replace(/\/+$/, '');
-const ASSET_PREFIX = window.DANDONG_ASSET_PREFIX || '/assets/';
+const ASSET_PREFIX = window.DANDONG_ASSET_PREFIX || '../assets/';
 const jokerFaces={small:ASSET_PREFIX+'joker-small.png',big:ASSET_PREFIX+'joker-big.png'};
 
 const SESSION_KEY = 'dandong50k-session';
@@ -136,7 +136,7 @@ function showGame() {
 function shareBase() {
   // Railway 域名在微信里会被拦，分享时优先给 GitHub Pages 地址。
   if (/(^|\.)railway\.app$/.test(location.hostname)) {
-    return 'https://gogogo123-cmd.github.io/dandong-50k/';
+    return 'https://gogogo123-cmd.github.io/dandong-50k/50k/';
   }
   return location.href.split('#')[0];
 }
@@ -1189,9 +1189,9 @@ async function joinRoom(mode, name) {
   try {
     let r;
     if (mode === 'join') {
-      r = await api('join', { room: roomId, name });
+      r = await api('join', { room: roomId, name, game: '50k' });
     } else {
-      r = await api('create', { name });
+      r = await api('create', { name, game: '50k' });
       roomId = r.room;
     }
     if (r.room) roomId = r.room;
@@ -1374,7 +1374,7 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', onVi
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    try { navigator.serviceWorker.register('sw.js?v=20').catch(() => {}); } catch {}
+    try { navigator.serviceWorker.register('../sw.js?v=20').catch(() => {}); } catch {}
   });
 }
 
