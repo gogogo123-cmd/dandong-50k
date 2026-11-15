@@ -622,3 +622,23 @@ body.lobby-mode .lobby-hint{display:block;font-size:clamp(10px,1.6vh,13px)}
 .card.emperor{border-color:#e9c47a;box-shadow:0 0 10px #e9c47a99,0 3px 8px #00160f66}
 .card.guard{border-color:#8fc9ff;box-shadow:0 0 10px #6eaed799,0 3px 8px #00160f66}
 .card.special{border-color:#ff6b61;box-shadow:0 0 10px #ff6b61aa,0 3px 8px #00160f66}
+
+/* ===== 图2牌面比例 + 图1手牌/出牌区尺寸 ===== */
+.card.card-face,.card.joker-face{height:auto!important;aspect-ratio:214/324}
+.card-img,.joker-art{object-fit:fill}
+.hand-scroll{flex:0 0 146px;min-height:138px;padding:14px 8px 6px}
+.hand-row .card{width:clamp(58px,6.2vw,74px);height:auto!important;margin-left:-14px;border-radius:8px}
+.hand-row .card:first-child{margin-left:0}
+.player-play .card,.my-play .card{width:clamp(44px,4.6vw,58px);height:auto!important;margin-left:-10px;padding:0;border-radius:8px}
+.player-play .card:first-child,.my-play .card:first-child,
+.player-play .card:first-of-type,.my-play .card:first-of-type{margin-left:0}
+.player-play{max-width:320px}
+.played-cards .card{width:clamp(44px,4.4vw,56px);height:auto!important;margin-left:-8px;padding:0}
+.played-cards .card:first-child{margin-left:0}
+@media(max-width:950px) and (orientation:landscape){
+  .hand-scroll{flex:0 0 112px;min-height:106px;padding:8px 6px 4px}
+  .hand-row .card{width:clamp(48px,5.8vw,58px);height:auto!important;margin-left:-11px}
+  .player-play .card,.my-play .card{width:clamp(38px,4.6vw,46px);height:auto!important;margin-left:-8px}
+  .played-cards .card{width:clamp(36px,4.4vw,44px);height:auto!important;margin-left:-6px}
+  .player-play{max-width:220px}
+}

@@ -125,23 +125,32 @@ test('保皇房间：5 座、157 张、每人一张 6；机器人整局可结算
     let s = started.body.state;
     assert.equal(s.game, 'baohuang');
     assert.equal(s.numSeats, 5);
-    assert.equal(s.phase, 'emperor');
+    assert.ok(s.phase === 'buy6' || s.phase === 'emperor');
     assert.equal(s.started, true);
     assert.equal(s.players.length, 5);
     assert.equal(s.players.reduce((n, p) => n + p.count, 0), 157);
     const sizes = s.players.map((p) => p.count).sort();
     assert.deepEqual(sizes, [31, 31, 31, 32, 32]);
-    assert.equal(s.hand.filter((c) => c.rank === 6).length, 1);
     assert.ok(s.players.every((p) => p.remaining === null), '未结算不泄露他人手牌');
     assert.equal(s.guardSeat, null, '登基前没有侍卫信息');
 
     const end = Date.now() + 120000;
+    let checkedSix = false;
     while (Date.now() < end) {
       s = await getState(server, room, token);
       if (s.finished) break;
+      if (!checkedSix && s.phase !== 'buy6' && s.phase !== 'dealing') {
+        assert.equal(s.hand.filter((c) => c.rank === 6).length, 1, '买6后每人恰好一张6');
+        checkedSix = true;
+      }
       if (s.actorSeat === seat) {
         let r;
-        if (s.phase === 'emperor') {
+        if (s.phase === 'buy6') {
+          const seller = (s.buy6Sellers || [])[0];
+          assert.ok(seller, '至少有一个卖方');
+          const extra = s.buy6PaymentId ? { cards: [s.buy6PaymentId] } : {};
+          r = await api(server, 'buy6', { room, token, seller: seller.seat, ...extra });
+        } else if (s.phase === 'emperor') {
           const triple = findTriple(s.hand);
           r = triple
             ? await api(server, 'emperor', { room, token, cards: triple.map((c) => c.id) })
@@ -158,6 +167,7 @@ test('保皇房间：5 座、157 张、每人一张 6；机器人整局可结算
       }
       await sleep(60);
     }
+    assert.equal(checkedSix, true, '买6阶段应完成');
     assert.ok(s.finished, '游戏应完成');
     assert.equal(s.phase, 'settlement');
     assert.ok(s.winnerCamp === 'emperor' || s.winnerCamp === 'revolution');
@@ -175,12 +185,11 @@ test('保皇房间：5 座、157 张、每人一张 6；机器人整局可结算
     const next = await api(server, 'next', { room, token });
     assert.equal(next.status, 200, JSON.stringify(next.body));
     const ns = next.body.state;
-    assert.equal(ns.phase, 'emperor');
+    assert.ok(ns.phase === 'buy6' || ns.phase === 'emperor');
     assert.equal(ns.finished, false);
     assert.deepEqual(ns.rankings, []);
     assert.equal(ns.guardPublic, false);
     assert.equal(ns.players.reduce((n, p) => n + p.count, 0), 157);
-    assert.equal(ns.hand.filter((c) => c.rank === 6).length, 1);
   } finally {
     await stopServer(server);
   }

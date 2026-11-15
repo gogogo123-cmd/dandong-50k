@@ -188,8 +188,9 @@ function handle(req, res) {
     return serveStatic(req, res, staticEntry);
   }
 
-  if (req.method === 'GET' && /^\/assets\/[a-z0-9-]+\.(png|jpg)$/.test(u.pathname)) {
-    const type = u.pathname.endsWith('.jpg') ? 'image/jpeg' : 'image/png';
+  if (req.method === 'GET' && /^\/assets\/[a-z0-9-]+\.(png|jpg|svg)$/.test(u.pathname)) {
+    const type = u.pathname.endsWith('.jpg') ? 'image/jpeg'
+      : u.pathname.endsWith('.svg') ? 'image/svg+xml' : 'image/png';
     const entry = { file: u.pathname.slice(1), type, cache: 'public, max-age=86400' };
     return serveStatic(req, res, entry);
   }

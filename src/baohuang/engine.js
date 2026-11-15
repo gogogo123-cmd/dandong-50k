@@ -4,7 +4,7 @@
 
 const {
   SEATS, RANK_SIX, RANK_TWO,
-  deal, planBuy6, applyBuy6, findTriples, findGuardHolder, nextSeat, prevSeat,
+  deal, countSix, choosePayment, payPriority, findTriples, findGuardHolder, nextSeat, prevSeat,
 } = require('./cards');
 const { analyze, beats, checkPlay, cardLabel, describeType, isBomb } = require('./rules');
 const { GameError } = require('../errors');
@@ -65,8 +65,30 @@ function campOf(r, seat) {
   return roleOf(r, seat) === 'emperor' || roleOf(r, seat) === 'guard' ? 'emperor' : 'revolution';
 }
 
+function buy6Buyers(r) {
+  const out = [];
+  r.players.forEach((p, i) => {
+    if (p && countSix(p.hand) === 0) out.push(i);
+  });
+  return out;
+}
+
+function buy6Sellers(r) {
+  const out = [];
+  r.players.forEach((p, i) => {
+    if (p && countSix(p.hand) > 1) out.push(i);
+  });
+  return out;
+}
+
+function buy6Actor(r) {
+  const buyers = buy6Buyers(r);
+  return buyers.length ? buyers[0] : null;
+}
+
 function actorSeat(r) {
   if (!r.started || r.finished) return null;
+  if (r.phase === 'buy6') return buy6Actor(r);
   if (r.phase === 'emperor') return r.candidateSeat;
   if (r.phase === 'wind') return r.windGiverSeat;
   if (r.phase === 'playing') return r.turn;
@@ -117,22 +139,23 @@ function dealNewRound(r) {
   for (;;) {
     attempt += 1;
     const dealt = deal(SEATS);
-    const plan = planBuy6(dealt.hands);
-    if (!plan) {
-      r.redealCount = (r.redealCount || 0) + 1;
-      if (attempt > 400) throw new GameError('deal-failed', '发牌失败，请重试', 500);
-      continue;
-    }
-    applyBuy6(dealt.hands, plan);
-    // 每名玩家必须且只能有一张 6
-    if (!dealt.hands.every((h) => h.filter((c) => c.rank === RANK_SIX).length === 1)) {
+    const hands = dealt.hands;
+    const buyers = [];
+    const sellers = [];
+    hands.forEach((hand, i) => {
+      const n = countSix(hand);
+      if (n === 0) buyers.push(i);
+      else if (n > 1) sellers.push(i);
+    });
+    // 任何买家没有支付牌（2/小王/大王）→ 本局重新发牌
+    if (buyers.some((seat) => !choosePayment(hands[seat]))) {
       r.redealCount = (r.redealCount || 0) + 1;
       if (attempt > 400) throw new GameError('deal-failed', '发牌失败，请重试', 500);
       continue;
     }
 
     r.players.forEach((p, i) => {
-      p.hand = dealt.hands[i];
+      p.hand = hands[i];
       p.done = false;
       p.rank = null;
     });
@@ -141,24 +164,23 @@ function dealNewRound(r) {
     r.initialCandidateSeat = dealt.specialSeat;
     r.candidateSeat = dealt.specialSeat;
     r.transferCount = 0;
-    r.buy6Log = plan.map((t) => ({
-      buyer: t.buyer,
-      seller: t.seller,
-      paid: { ...t.paid },
-      sixId: t.sixId,
-    }));
-    r.phase = 'emperor';
-    r.turn = dealt.specialSeat;
+    r.buy6Log = [];
     r.lead = null;
     r.passes = 0;
     r.passed = Array(SEATS).fill(false);
     r.playedBy = Array(SEATS).fill(null);
 
     r.log.push(`第${(r.gamesPlayed || 0) + 1}小局发牌完成：${dealt.sizes.join('/')}`);
-    for (const t of plan) {
-      r.log.push(`${seatName(r, t.buyer)} 用${cardLabel(t.paid)}向${seatName(r, t.seller)}买6`);
-    }
     r.log.push(`特殊大王标记最初在${seatName(r, r.specialSeat)}手中，获得皇帝选择权`);
+    if (buyers.length) {
+      r.phase = 'buy6';
+      r.turn = buyers[0];
+      r.log.push(`买6开始：${buyers.map((s) => seatName(r, s)).join('、')} 需要买6；${sellers.map((s) => `${seatName(r, s)}（多${countSix(hands[s]) - 1}张）`).join('、')} 出售多余6`);
+    } else {
+      r.phase = 'emperor';
+      r.turn = dealt.specialSeat;
+      r.log.push('每人恰好一张6，买6完成');
+    }
     return;
   }
 }
@@ -275,6 +297,72 @@ function autoEmperor(r, prefix) {
     r.log.push(`${prefix}${seatName(r, seat)} 自动让位`);
     yieldEmperor(r, seat);
   }
+}
+
+function finishBuy6(r) {
+  r.phase = 'emperor';
+  r.turn = r.candidateSeat;
+  r.lead = null;
+  r.passes = 0;
+  r.passed = Array(SEATS).fill(false);
+  r.playedBy = Array(SEATS).fill(null);
+  r.log.push('买6完成，进入皇帝与侍卫确认');
+}
+
+function doBuy6(r, seat, payload = {}, prefix = '') {
+  if (r.phase !== 'buy6') throw new GameError('bad-phase', '当前不是买6阶段', 409);
+  const actor = buy6Actor(r);
+  if (actor == null) { finishBuy6(r); return; }
+  if (seat !== actor) throw new GameError('not-turn', '还没轮到你买6', 409);
+  const p = r.players[seat];
+  if (countSix(p.hand) !== 0) throw new GameError('bad-buy6', '你不需要买6', 400);
+  const seller = Number(payload.seller);
+  const sp = r.players[seller];
+  if (!Number.isInteger(seller) || seller < 0 || seller >= SEATS || !sp) {
+    throw new GameError('bad-target', '请选择出售6的玩家', 400);
+  }
+  if (countSix(sp.hand) < 2) throw new GameError('bad-target', '该玩家没有多余的6', 400);
+  const best = choosePayment(p.hand);
+  if (!best) {
+    redeal(r, `${seatName(r, seat)} 没有2/王可支付，本局重新发牌`);
+    return;
+  }
+  const ids = Array.isArray(payload.cards) ? payload.cards.map(String) : [];
+  if (ids.length > 1) throw new GameError('bad-cards', '买6只能支付一张牌', 400);
+  const chosen = ids.length ? p.hand.find((c) => c.id === ids[0]) : best;
+  if (!chosen || payPriority(chosen) < 0) throw new GameError('bad-cards', '请选择2、小王或大王支付', 400);
+  if (payPriority(chosen) !== payPriority(best)) {
+    throw new GameError('bad-cards', '支付牌必须优先使用2、小王、大王');
+  }
+  const six = sp.hand.find((c) => c.rank === RANK_SIX);
+  if (!six) {
+    redeal(r, '买6时未找到6，本局重新发牌');
+    return;
+  }
+  p.hand = p.hand.filter((c) => c.id !== chosen.id);
+  sp.hand = sp.hand.filter((c) => c.id !== six.id);
+  p.hand.push(six);
+  sp.hand.push(chosen);
+  r.buy6Log.push({ buyer: seat, seller, paid: { ...chosen }, sixId: six.id });
+  r.log.push(`${prefix}${seatName(r, seat)} 用${cardLabel(chosen)}向${seatName(r, seller)}买6`);
+  if (buy6Actor(r) == null) finishBuy6(r);
+  else r.turn = buy6Actor(r);
+}
+
+function autoBuy6(r, prefix) {
+  const seat = buy6Actor(r);
+  if (seat == null) { finishBuy6(r); return; }
+  const payment = choosePayment(r.players[seat].hand);
+  if (!payment) {
+    redeal(r, `${seatName(r, seat)} 没有2/王可支付，本局重新发牌`);
+    return;
+  }
+  const sellers = buy6Sellers(r);
+  if (!sellers.length) {
+    redeal(r, '没有玩家可出售多余的6，本局重新发牌');
+    return;
+  }
+  doBuy6(r, seat, { seller: sellers[0], cards: [payment.id] }, prefix);
 }
 
 function validWindTargets(r) {
@@ -456,7 +544,7 @@ function doPlay(r, seat, cards) {
     finishForPlayer(r, seat);
     return;
   }
-  if (!nextActive(r, seat)) {
+  if (nextActive(r, seat) == null) {
     endRound(r, seat);
   }
 }
@@ -471,7 +559,7 @@ function doPass(r, seat) {
     endRound(r, r.lead.seat);
     return;
   }
-  if (!nextActive(r, seat)) {
+  if (nextActive(r, seat) == null) {
     endRound(r, r.lead.seat);
   }
 }
@@ -483,7 +571,7 @@ function endRound(r, leader) {
   r.playedBy = Array(SEATS).fill(null);
   r.turn = leader;
   if (r.players[leader]?.done) {
-    if (!nextActive(r, leader)) {
+    if (nextActive(r, leader) == null) {
       settleFromState(r);
       return;
     }
@@ -512,6 +600,11 @@ function applyAction(r, seat, action, payload = {}) {
     const triple = triples.find((t) => t.cards.map((c) => c.id).sort().join(',') === wanted);
     if (!triple) throw new GameError('bad-emperor', '需要三张同花色、同点数的牌', 400);
     enthrone(r, seat, triple);
+    return true;
+  }
+
+  if (r.phase === 'buy6' && action === 'buy6') {
+    doBuy6(r, seat, payload, '');
     return true;
   }
 
@@ -667,13 +760,15 @@ function autoPlay(r, prefix) {
 }
 
 function onTimeout(r) {
-  if (r.phase === 'emperor') autoEmperor(r, '超时，');
+  if (r.phase === 'buy6') autoBuy6(r, '超时，');
+  else if (r.phase === 'emperor') autoEmperor(r, '超时，');
   else if (r.phase === 'wind') autoWind(r, '超时，', true);
   else if (r.phase === 'playing') autoPlay(r, '超时，');
 }
 
 function onBot(r) {
-  if (r.phase === 'emperor') autoEmperor(r, '');
+  if (r.phase === 'buy6') autoBuy6(r, '');
+  else if (r.phase === 'emperor') autoEmperor(r, '');
   else if (r.phase === 'wind') autoWind(r, '', true);
   else if (r.phase === 'playing') botPlay(r);
 }
@@ -740,6 +835,14 @@ function publicState(r, seat, helpers = {}) {
     windOptions,
     lastWind: r.lastWind || null,
     buy6Log: r.buy6Log || [],
+    buy6Seat: r.phase === 'buy6' ? buy6Actor(r) : null,
+    buy6Buyers: r.phase === 'buy6' ? buy6Buyers(r) : [],
+    buy6Sellers: r.phase === 'buy6'
+      ? buy6Sellers(r).map((s) => ({ seat: s, extra: countSix(r.players[s].hand) - 1 }))
+      : [],
+    buy6PaymentId: r.phase === 'buy6' && seat === buy6Actor(r)
+      ? ((choosePayment(r.players[seat]?.hand || []) || {}).id || null)
+      : null,
     winnerCamp: r.winnerCamp,
     emperorWin: r.emperorWin,
     log: (r.log || []).slice(-14),
@@ -783,8 +886,8 @@ function normalize(r, rec) {
   const seats = SEATS;
   const phase = ['lobby', 'dealing', 'buy6', 'emperor', 'playing', 'wind', 'settlement'].includes(rec.phase)
     ? rec.phase : (rec.finished ? 'settlement' : rec.started ? 'playing' : 'lobby');
-  // 发牌/买6在服务端同步完成，不应成为持久化后的停留阶段。
-  r.phase = phase === 'dealing' || phase === 'buy6' ? 'emperor' : phase;
+  // 发牌是同步完成的，不会成为持久化停留阶段；买6为手动阶段，可恢复。
+  r.phase = phase === 'dealing' ? 'emperor' : phase;
   const seatOrNull = (v) => (Number.isInteger(v) && v >= 0 && v < seats ? v : null);
   r.candidateSeat = seatOrNull(rec.candidateSeat);
   r.initialCandidateSeat = seatOrNull(rec.initialCandidateSeat);
@@ -817,6 +920,11 @@ function normalize(r, rec) {
 
   // 修复：当前阶段必须有一个合法操作者
   if (r.started && !r.finished) {
+    if (r.phase === 'buy6' && buy6Actor(r) == null) {
+      r.phase = 'emperor';
+      if (r.candidateSeat == null) r.candidateSeat = r.players.findIndex(Boolean);
+      r.turn = r.candidateSeat;
+    }
     if (r.phase === 'emperor' && (r.candidateSeat == null || !r.players[r.candidateSeat])) {
       r.candidateSeat = r.players.findIndex(Boolean);
     }

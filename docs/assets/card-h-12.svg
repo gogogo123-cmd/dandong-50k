@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 214 324" width="214" height="324">
+<rect x="1.5" y="1.5" width="211" height="321" rx="16" fill="#ffffff" stroke="#d8d8d8" stroke-width="3"/>
+<text x="16" y="80" font-family="Georgia, 'Times New Roman', serif" font-size="70" font-weight="700" fill="#d21f2b">Q</text>
+<g transform="translate(17 98) scale(0.63)"><g fill="#d21f2b"><path d="M50 90 C20 66 8 49 8 32 C8 16 20 8 32 8 C40 8 46 12 50 18 C54 12 60 8 68 8 C80 8 92 16 92 32 C92 49 80 66 50 90 Z"/></g></g>
+</svg>

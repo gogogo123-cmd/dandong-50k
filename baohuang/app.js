@@ -411,6 +411,8 @@ function goHome() {
   if (round) round.classList.remove('show');
   const wind = $('#windModal');
   if (wind) wind.classList.remove('show');
+  const buy6 = $('#buy6Modal');
+  if (buy6) buy6.classList.remove('show');
   history.replaceState(null, '', location.pathname + location.search);
   setBanner('', false);
 }
@@ -435,6 +437,7 @@ function render(s) {
   renderMySeat(s);
   renderHand(s);
   updateActionBar(s);
+  renderBuy6Modal(s);
   renderWindModal(s);
   renderRoundModal(s);
   $('#gameLog').textContent = (s.log || []).slice(-3).join('　·　');
@@ -455,8 +458,27 @@ function renderCenter(s) {
     renderLobby(s);
     return;
   }
-  if (s.phase === 'dealing' || s.phase === 'buy6') {
-    box.innerHTML = `<div class="center-box"><div class="center-title">${s.phase === 'dealing' ? '发牌中' : '买6中'}</div><div class="center-sub">系统正在自动完成发牌与买6…</div></div>`;
+  if (s.phase === 'dealing') {
+    box.innerHTML = '<div class="center-box"><div class="center-title">发牌中</div><div class="center-sub">正在发牌…</div></div>';
+    return;
+  }
+  if (s.phase === 'buy6') {
+    const buyer = s.players?.[s.buy6Seat];
+    const isMe = s.buy6Seat === seat;
+    const sellers = (s.buy6Sellers || []).map(({ seat: i, extra }) => `${DD.esc(s.players?.[i]?.name || `${i + 1}号位`)}（多${extra}张）`).join('、');
+    const trades = (s.buy6Log || []).slice(-4).map((t) => {
+      const b = s.players?.[t.buyer]?.name || `${t.buyer + 1}号位`;
+      const sel = s.players?.[t.seller]?.name || `${t.seller + 1}号位`;
+      return `<div><b>${DD.esc(b)}</b> 用 ${DD.esc(paidLabel(t.paid))} 向 <b>${DD.esc(sel)}</b> 买6</div>`;
+    }).join('');
+    box.innerHTML = `<div class="center-box">
+      ${phaseSteps(s)}
+      <div class="center-title">买6中</div>
+      <div class="center-sub">${isMe ? '轮到你买6，请选择出售多余6的玩家。' : `等待 <b>${DD.esc(buyer?.name || '')}</b> 买6。`}</div>
+      <div class="center-sub">持有额外6：${sellers || '无'}</div>
+      <div class="center-sub">支付优先使用 2 → 小王 → 大王。</div>
+      ${trades ? `<div class="buy6-log">${trades}</div>` : ''}
+    </div>`;
     return;
   }
   if (s.phase === 'emperor') {
@@ -755,6 +777,15 @@ function updateActionBar(s) {
         : '没有合法三张，请让位给上家';
     return;
   }
+  if (s.phase === 'buy6') {
+    playBtn.disabled = true;
+    passBtn.disabled = true;
+    hintBtn.disabled = true;
+    $('#actionHint').textContent = s.buy6Seat === seat
+      ? '请在弹窗中选择卖方'
+      : `等待${s.players?.[s.buy6Seat]?.name || '玩家'}买6`;
+    return;
+  }
   if (s.phase === 'wind') {
     playBtn.disabled = true;
     passBtn.disabled = true;
@@ -781,6 +812,22 @@ function updateActionBar(s) {
     : chosen.length ? `已选：${describeType(check.type)}${canPlay ? ' · 可以出牌' : check.type ? ' · 压不过上家' : ' · 牌型不成立'}`
       : target ? '选牌压上家，或不要' : '选一手合法牌型';
   $('#actionHint').textContent = hintText;
+}
+
+function renderBuy6Modal(s) {
+  const modal = $('#buy6Modal');
+  const open = s.started && !s.finished && s.phase === 'buy6' && s.buy6Seat === seat;
+  modal.classList.toggle('show', open);
+  if (!open) return;
+  const pay = (s.hand || []).find((c) => c.id === s.buy6PaymentId);
+  $('#buy6Pay').innerHTML = pay
+    ? `将支付 <span class="pay-card">${DD.cardHTML(pay)}</span>`
+    : '你没有可支付的 2 或王，本局将重新发牌';
+  $('#buy6List').innerHTML = (s.buy6Sellers || []).map(({ seat: i, extra }) => {
+    const p = s.players?.[i];
+    if (!p) return '';
+    return `<button type="button" data-buy6seller="${i}">${DD.esc(p.name)}<small>多 ${extra} 张6</small></button>`;
+  }).join('');
 }
 
 function renderWindModal(s) {
@@ -882,7 +929,7 @@ function updateCountdown() {
   myTimer.classList.toggle('low', mine && low);
   if (mine) myTimer.textContent = `${sec}s`;
   myTimer.title = mine
-    ? (state.phase === 'emperor' ? '超时自动登基或让位' : state.phase === 'wind' ? '超时自动给风' : state.lead && state.lead.seat !== seat ? '超时自动不要' : '超时自动出最小牌')
+    ? (state.phase === 'buy6' ? '超时自动买6' : state.phase === 'emperor' ? '超时自动登基或让位' : state.phase === 'wind' ? '超时自动给风' : state.lead && state.lead.seat !== seat ? '超时自动不要' : '超时自动出最小牌')
     : '你的操作倒计时';
   document.querySelectorAll('#players .seat-timer').forEach((el) => {
     el.textContent = show ? `${sec}s` : '';
@@ -1177,6 +1224,12 @@ $('#playCards').onclick = playSelected;
 $('#passTurn').onclick = passTurn;
 $('#hint').onclick = useHint;
 $('#nextGame').onclick = () => doAction('next');
+$('#buy6List').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-buy6seller]');
+  if (!b) return;
+  DD.audio.ensure();
+  doAction('buy6', { seller: Number(b.dataset.buy6seller) });
+});
 $('#windList').addEventListener('click', (e) => {
   const b = e.target.closest('[data-wind]');
   if (!b) return;

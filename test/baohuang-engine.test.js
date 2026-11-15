@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const bh = require('../src/baohuang/engine');
+const { findTriples } = require('../src/baohuang/cards');
 
 let seq = 0;
 function c(rank, suit = 0) {
@@ -136,10 +137,12 @@ test('让位无2 → 本局重新发牌', () => {
   action(r, 0, 'emperor', { yield: true }); // 首次不贡
   action(r, 4, 'emperor', { yield: true }); // 第二次无2 → 重发
   assert.ok(r.redealCount >= 1);
-  assert.equal(r.phase, 'emperor');
+  assert.ok(r.phase === 'buy6' || r.phase === 'emperor');
   const all = r.players.flatMap((p) => p.hand);
   assert.equal(all.length, 157);
-  for (const p of r.players) assert.equal(p.hand.filter((x) => x.rank === 6).length, 1);
+  if (r.phase === 'emperor') {
+    for (const p of r.players) assert.equal(p.hand.filter((x) => x.rank === 6).length, 1);
+  }
 });
 
 test('侍卫牌：只能单张，打出后身份公开', () => {
@@ -265,6 +268,56 @@ test('皇帝阵营头科但另一人第四 → 革命党胜', () => {
   assert.equal(r.emperorWin, false);
 });
 
+test('手动买6：买方选卖方，支付优先级校验，完成后进入皇帝确认', () => {
+  const two = c(15, 0);
+  const small = c(16, 4);
+  const hands = [
+    [two, small, c(7)],
+    [c(6), c(6), c(8)],
+    [c(6), c(9)],
+    [c(6), c(10)],
+    [c(6), c(11)],
+  ];
+  const r = makeRoom(hands, {
+    phase: 'buy6',
+    candidateSeat: 2,
+    turn: 0,
+    buy6Log: [],
+  });
+  assert.throws(
+    () => action(r, 0, 'buy6', { seller: 1, cards: [small.id] }),
+    (e) => e.code === 'bad-cards',
+  );
+  action(r, 0, 'buy6', { seller: 1 });
+  assert.equal(r.players[0].hand.filter((x) => x.rank === 6).length, 1);
+  assert.equal(r.players[1].hand.filter((x) => x.rank === 6).length, 1);
+  assert.ok(r.players[0].hand.every((x) => x.id !== two.id), '优先支付2');
+  assert.ok(r.players[1].hand.some((x) => x.id === two.id));
+  assert.equal(r.buy6Log.length, 1);
+  assert.equal(r.phase, 'emperor');
+  assert.equal(r.turn, 2);
+});
+
+test('手动买6：卖方必须有多余6；机器人自动完成买6', () => {
+  const hands = [
+    [c(15, 0), c(7)],
+    [c(6), c(6), c(8)],
+    [c(6), c(9)],
+    [c(6), c(10)],
+    [c(6), c(11)],
+  ];
+  const r = makeRoom(hands, { phase: 'buy6', candidateSeat: 2, turn: 0, buy6Log: [] });
+  assert.throws(
+    () => action(r, 0, 'buy6', { seller: 2 }),
+    (e) => e.code === 'bad-target',
+  );
+  r.players[0].bot = true;
+  bh.onBot(r);
+  assert.equal(r.players[0].hand.filter((x) => x.rank === 6).length, 1);
+  assert.equal(r.phase, 'emperor');
+  assert.equal(r.buy6Log.length, 1);
+});
+
 test('最后一张6跟牌时允许直接打出并触发给风', () => {
   const leadCard = c(10, 0);
   const six = c(6);
@@ -357,4 +410,50 @@ test('过牌不准上：过牌后本轮不再轮到该玩家', () => {
   assert.equal(r.turn, 0);
   assert.deepEqual(r.passed, Array(5).fill(false));
   assert.deepEqual(r.playedBy, Array(5).fill(null));
+});
+
+test('整局机器人依次行动：不会连续由同一座位出牌，真人不会被跳过', () => {
+  const r = makeRoom(Array.from({ length: 5 }, () => []), { started: false, phase: 'lobby' });
+  r.players.forEach((p, i) => { p.bot = i !== 0; });
+  bh.startGame(r);
+
+  let humanCardTurns = 0;
+  let steps = 0;
+  while (!r.finished && steps++ < 4000) {
+    const actor = bh.actorSeat(r);
+    assert.notEqual(actor, null, '每个阶段都应有操作者');
+    if (r.phase === 'playing') assert.equal(r.players[actor].done, false, '不能轮到已出完的玩家');
+    if (r.phase === 'playing' && actor === 0) humanCardTurns += 1;
+
+    if (r.players[actor].bot) {
+      bh.onBot(r);
+      // 机器人出完一手后，除“本墩结束、由最后出牌者重新领出”外，必须换人。
+      if (!r.finished && r.phase === 'playing' && r.lead && bh.actorSeat(r) === actor) {
+        assert.fail(`机器人 ${actor} 连续出牌，跳过了其他玩家`);
+      }
+      continue;
+    }
+
+    if (r.phase === 'buy6') {
+      const seller = r.players.findIndex((p, i) => i !== actor && p.hand.filter((c) => c.rank === 6).length > 1);
+      action(r, actor, 'buy6', { seller });
+    } else if (r.phase === 'emperor') {
+      const triple = findTriples(r.players[actor].hand)[0];
+      if (triple) action(r, actor, 'emperor', { cards: triple.cards.map((c) => c.id) });
+      else action(r, actor, 'emperor', { yield: true });
+    } else if (r.phase === 'wind') {
+      action(r, actor, 'wind', { seat: r.players.findIndex((p, i) => i !== actor && !p.done && p.hand.length) });
+    } else if (r.phase === 'playing') {
+      if (r.lead && r.lead.seat !== actor) action(r, actor, 'pass');
+      else {
+        const p = r.players[actor];
+        const card = p.hand.filter((c) => c.rank !== 6 || p.hand.length === 1)
+          .sort((a, b) => a.rank - b.rank || a.suit - b.suit)[0];
+        action(r, actor, 'play', { cards: [card.id] });
+      }
+    }
+  }
+
+  assert.ok(r.finished, '整局应正常结算');
+  assert.ok(humanCardTurns >= 3, `真人应持续参与出牌，实际 ${humanCardTurns} 次`);
 });

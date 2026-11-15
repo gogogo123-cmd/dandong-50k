@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 214 324" width="214" height="324">
+<rect x="1.5" y="1.5" width="211" height="321" rx="16" fill="#ffffff" stroke="#d8d8d8" stroke-width="3"/>
+<text x="16" y="80" font-family="Georgia, 'Times New Roman', serif" font-size="70" font-weight="700" fill="#17181a">6</text>
+<g transform="translate(17 98) scale(0.63)"><g fill="#17181a"><circle cx="50" cy="28" r="22"/><circle cx="27" cy="58" r="22"/><circle cx="73" cy="58" r="22"/><path d="M42 56 C43 76 36 88 26 96 L74 96 C64 88 57 76 58 56 Z"/></g></g>
+</svg>
