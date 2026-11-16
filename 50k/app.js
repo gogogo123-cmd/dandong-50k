@@ -271,6 +271,7 @@ function describe(cards) {
   if (n === 3 && ranks.every((r) => r === ranks[0]) && ranks[0] >= 16) return '三王';
   if (n === 3 && [5, 10, 13].every((r) => counts.get(r) === 1)) return new Set(cards.map((c) => c.suit)).size === 1 ? '纯腿' : '杂腿';
   if (n >= 3 && counts.size === 1) return `${n}张炸弹`;
+  if (n >= 6 && counts.size === 2 && [...counts.entries()].every(([r, v]) => r >= 5 && r <= 15 && v >= 3)) return '双炸弹';
   if (n >= 6 && n % 2 === 0 && [...counts.values()].every((v) => v === 2)) {
     const q = [...counts.keys()].sort((a, b) => a - b);
     if (q.every((x, i) => x >= 5 && x <= 14 && (!i || x === q[i - 1] + 1))) return '双顺';
@@ -284,7 +285,7 @@ function describe(cards) {
 }
 
 function rankPower(kind) {
-  return ({ ordinary: 0, single: 0, pair: 0, triple: 0, straight: 0, doubleStraight: 0, bomb: 1, mixedLeg: 2, king2: 3, pureLeg: 4, king3: 5 })[kind] ?? -1;
+  return ({ ordinary: 0, single: 0, pair: 0, triple: 0, straight: 0, doubleStraight: 0, bomb: 1, doubleBomb: 1.5, mixedLeg: 2, king2: 3, pureLeg: 4, king3: 5 })[kind] ?? -1;
 }
 
 function getType(cards) {
@@ -297,6 +298,12 @@ function getType(cards) {
     return { kind: pure ? 'pureLeg' : 'mixedLeg', power: pure ? ({ 1: 4, 3: 3, 0: 2, 2: 1 }[ss[0]]) : 0, n };
   }
   if (n >= 3 && count.size === 1) return { kind: 'bomb', power: rs[0], n };
+  if (n >= 6 && count.size === 2) {
+    const entries = [...count.entries()];
+    if (entries.every(([r, v]) => r >= 5 && r <= 15 && v >= 3)) {
+      return { kind: 'doubleBomb', n, bombs: entries.map(([r, v]) => ({ n: v, power: r })) };
+    }
+  }
   if (n >= 6 && n % 2 === 0 && [...count.values()].every((v) => v === 2)) {
     const q = [...count.keys()].sort((a, b) => a - b);
     if (q.every((r, i) => r >= 5 && r <= 14 && (!i || r === q[i - 1] + 1))) return { kind: 'doubleStraight', power: q.at(-1), n };
@@ -309,15 +316,37 @@ function getType(cards) {
   return null;
 }
 
+function bombBeatsType(a, b) {
+  return a.n > b.n || (a.n === b.n && a.power > b.power);
+}
+function sortBombs(list) {
+  return list.slice().sort((a, b) => a.n - b.n || a.power - b.power);
+}
+function doubleBombsBeat(a, b) {
+  const A = sortBombs(a.bombs || []), B = sortBombs(b.bombs || []);
+  return A.length === B.length && A.every((x, i) => bombBeatsType(x, B[i]));
+}
+function bigBombBeatsDouble(a, b) {
+  for (let k = 3; k <= a.n - 3; k++) {
+    if (doubleBombsBeat({ bombs: [{ n: k, power: a.power }, { n: a.n - k, power: a.power }] }, b)) return true;
+  }
+  return false;
+}
 function canBeat(a, b) {
   if (!a) return false;
   if (!b) return true;
+  if (b.kind === 'doubleBomb') {
+    if (a.kind === 'doubleBomb') return doubleBombsBeat(a, b);
+    if (a.kind === 'bomb') return a.n >= 6 && bigBombBeatsDouble(a, b);
+    return ['mixedLeg', 'pureLeg', 'king2', 'king3'].includes(a.kind);
+  }
+  if (a.kind === 'doubleBomb') return false;
   if (a.kind !== b.kind) {
     if (a.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(b.kind)) return true;
     if (b.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(a.kind)) return false;
     return rankPower(a.kind) > rankPower(b.kind);
   }
-  if (a.kind === 'bomb') return a.n > b.n || (a.n === b.n && a.power > b.power);
+  if (a.kind === 'bomb') return bombBeatsType(a, b);
   if (['pureLeg', 'mixedLeg', 'king2', 'king3'].includes(a.kind)) return a.power > b.power;
   return a.n === b.n && a.power > b.power;
 }
@@ -401,6 +430,21 @@ function buildHints(s) {
     seq.push(r);
   }
   flushSeq();
+
+  // 双炸弹：上家出双炸弹时，枚举两副炸弹的组合（需分别压住上家两副炸弹）
+  if (target && target.kind === 'doubleBomb') {
+    const groups = [...byRank.entries()].filter(([r, g]) => r >= 5 && r <= 15 && g.length >= 3);
+    for (let i = 0; i < groups.length; i++) {
+      for (let j = i + 1; j < groups.length; j++) {
+        const g1 = groups[i][1], g2 = groups[j][1];
+        for (let n1 = 3; n1 <= g1.length; n1++) {
+          for (let n2 = 3; n2 <= g2.length; n2++) {
+            push([...g1.slice(0, n1), ...g2.slice(0, n2)]);
+          }
+        }
+      }
+    }
+  }
 
   // 优先不拆对子/三张/炸弹；同代价时先普通牌型、再由小到大。
   out.sort((a, b) => a.breaks - b.breaks

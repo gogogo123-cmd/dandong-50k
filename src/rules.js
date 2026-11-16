@@ -4,9 +4,64 @@
 const suitPower = {1: 4, 3: 3, 0: 2, 2: 1};
 
 function deck(){const d=[];for(let z=0;z<3;z++){for(let s=0;s<4;s++)for(let r=5;r<=15;r++)d.push({id:`${z}-${s}-${r}`,rank:r,suit:s});d.push({id:`${z}-BJ`,rank:16,suit:4,color:'black'},{id:`${z}-RJ`,rank:17,suit:4,color:'red'});}return d;}
-function classify(cards){const n=cards.length,rs=cards.map(c=>c.rank),ss=cards.map(c=>c.suit),counts=new Map();rs.forEach(r=>counts.set(r,(counts.get(r)||0)+1));if(n===3&&rs.every(r=>r===rs[0])&&rs[0]>=16)return{kind:'king3',n,power:rs[0]};if(n===2&&rs.every(r=>r===rs[0])&&rs[0]>=16)return{kind:'king2',n,power:rs[0]};if(n===3&&[5,10,13].every(r=>counts.get(r)===1)){let pure=new Set(ss).size===1;return{kind:pure?'pureLeg':'mixedLeg',n,power:pure?suitPower[ss[0]]:0};}if(n>=3&&counts.size===1)return{kind:'bomb',n,power:rs[0]};if(n>=6&&n%2===0&&rs.every(r=>r>=5&&r<=14)&&[...counts.values()].every(v=>v===2)){let q=[...counts.keys()].sort((a,b)=>a-b);if(q.length>=3&&q.every((r,i)=>!i||r===q[i-1]+1))return{kind:'doubleStraight',n,power:q.at(-1)};}if(n>=3&&rs.every(r=>r>=5&&r<=14)&&counts.size===n){let q=[...rs].sort((a,b)=>a-b);if(q.every((r,i)=>!i||r===q[i-1]+1))return{kind:'straight',n,power:q.at(-1)};}if(counts.size===1)return{kind:n===1?'single':n===2?'pair':'triple',n,power:rs[0]};return null;}
-const trump=k=>({single:0,pair:0,triple:0,straight:0,doubleStraight:0,bomb:1,mixedLeg:2,king2:3,pureLeg:4,king3:5}[k]??-1);
-function beats(a,b){if(!a)return false;if(!b)return true;if(a.kind!==b.kind){if(a.kind==='mixedLeg'&&['bomb','straight','doubleStraight'].includes(b.kind))return true;if(b.kind==='mixedLeg'&&['bomb','straight','doubleStraight'].includes(a.kind))return false;return trump(a.kind)>trump(b.kind);}if(['pureLeg','mixedLeg','king2','king3'].includes(a.kind))return a.power>b.power;if(a.kind==='bomb')return a.n>b.n||(a.n===b.n&&a.power>b.power);return a.n===b.n&&a.power>b.power;}
+function classify(cards) {
+  const n = cards.length, rs = cards.map((c) => c.rank), ss = cards.map((c) => c.suit), counts = new Map();
+  rs.forEach((r) => counts.set(r, (counts.get(r) || 0) + 1));
+  if (n === 3 && rs.every((r) => r === rs[0]) && rs[0] >= 16) return { kind: 'king3', n, power: rs[0] };
+  if (n === 2 && rs.every((r) => r === rs[0]) && rs[0] >= 16) return { kind: 'king2', n, power: rs[0] };
+  if (n === 3 && [5, 10, 13].every((r) => counts.get(r) === 1)) {
+    const pure = new Set(ss).size === 1;
+    return { kind: pure ? 'pureLeg' : 'mixedLeg', n, power: pure ? suitPower[ss[0]] : 0 };
+  }
+  if (n >= 3 && counts.size === 1) return { kind: 'bomb', n, power: rs[0] };
+  // 双炸弹：两副普通点数炸弹一起出（王/腿不算炸弹组件）
+  if (n >= 6 && counts.size === 2 && [...counts.entries()].every(([r, v]) => r >= 5 && r <= 15 && v >= 3)) {
+    const bombs = [...counts.entries()].map(([r, v]) => ({ n: v, power: r }));
+    return { kind: 'doubleBomb', n, bombs };
+  }
+  if (n >= 6 && n % 2 === 0 && [...counts.values()].every((v) => v === 2)) {
+    const q = [...counts.keys()].sort((a, b) => a - b);
+    if (q.length >= 3 && q.every((r, i) => !i || r === q[i - 1] + 1)) return { kind: 'doubleStraight', n, power: q.at(-1) };
+  }
+  if (n >= 3 && rs.every((r) => r >= 5 && r <= 14) && counts.size === n) {
+    const q = [...rs].sort((a, b) => a - b);
+    if (q.every((r, i) => !i || r === q[i - 1] + 1)) return { kind: 'straight', n, power: q.at(-1) };
+  }
+  if (counts.size === 1) return { kind: n === 1 ? 'single' : n === 2 ? 'pair' : 'triple', n, power: rs[0] };
+  return null;
+}
+function bombBeats(a, b) { return a.n > b.n || (a.n === b.n && a.power > b.power); }
+function sortBombs(list) { return list.slice().sort((a, b) => a.n - b.n || a.power - b.power); }
+function doubleBombsBeat(a, b) {
+  const A = sortBombs(a.bombs || []), B = sortBombs(b.bombs || []);
+  return A.length === B.length && A.every((x, i) => bombBeats(x, B[i]));
+}
+// 6张及以上的炸弹可拆成两副炸弹：存在一种拆分能分别压住上家两副炸弹即可
+function bigBombBeatsDouble(a, b) {
+  for (let k = 3; k <= a.n - 3; k++) {
+    if (doubleBombsBeat({ bombs: [{ n: k, power: a.power }, { n: a.n - k, power: a.power }] }, b)) return true;
+  }
+  return false;
+}
+const trump = (k) => ({ single: 0, pair: 0, triple: 0, straight: 0, doubleStraight: 0, bomb: 1, doubleBomb: 1.5, mixedLeg: 2, king2: 3, pureLeg: 4, king3: 5 }[k] ?? -1);
+function beats(a, b) {
+  if (!a) return false;
+  if (!b) return true;
+  if (b.kind === 'doubleBomb') {
+    if (a.kind === 'doubleBomb') return doubleBombsBeat(a, b);
+    if (a.kind === 'bomb') return a.n >= 6 && bigBombBeatsDouble(a, b);
+    return ['mixedLeg', 'pureLeg', 'king2', 'king3'].includes(a.kind);
+  }
+  if (a.kind === 'doubleBomb') return false;
+  if (a.kind !== b.kind) {
+    if (a.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(b.kind)) return true;
+    if (b.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(a.kind)) return false;
+    return trump(a.kind) > trump(b.kind);
+  }
+  if (['pureLeg', 'mixedLeg', 'king2', 'king3'].includes(a.kind)) return a.power > b.power;
+  if (a.kind === 'bomb') return bombBeats(a, b);
+  return a.n === b.n && a.power > b.power;
+}
 function teamName(room,team){return team===0?'红队':'蓝队';}
 // 座位即位置：1/3/5 号位为红队，2/4/6 号位为蓝队；选座即选队友/对手。
 function assignTeams(r){r.positions=[0,1,2,3,4,5];r.teams=[0,1,0,1,0,1];let red=r.teams.flatMap((t,i)=>t===0?[i+1]:[]),blue=r.teams.flatMap((t,i)=>t===1?[i+1]:[]);r.log.push(`按座位分队：红队 ${red.join('、')}号位；蓝队 ${blue.join('、')}号位`);}
@@ -23,7 +78,7 @@ function passTurn(r,seat,name){if(!r.lead)throw Error('当前没有上家牌，�
 function startHand(r){let cards=deck();for(let i=cards.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[cards[i],cards[j]]=[cards[j],cards[i]];}r.players.forEach((p,i)=>{p.hand=cards.slice(i*23,(i+1)*23);p.done=false;});r.started=true;let previousEmperor=r.bigEmperor;r.turn=r.gamesPlayed===0?Math.floor(cards.findIndex(c=>c.rank===6&&c.suit===1)/23):(previousEmperor??0);r.lead=null;r.passes=0;r.passed=Array(6).fill(false);r.finished=false;r.roundWinner=null;r.leftoverPoints=0;r.penalty=0;r.trickPoints=0;r.playedBy=Array(6).fill(null);r.scores=[0,0];r.bigEmperor=null;r.log.push(r.gamesPlayed===0?'首局由持红桃6的玩家先出牌':`本局由上一局大皇（${r.players[r.turn].name}）先出牌`);r.log.push(`第${r.gamesPlayed+1}小局发牌完成`);}
 function startGame(r){assignTeams(r);r.gamesPlayed=0;r.bigSet=1;r.matchResults=[];r.bigEmperor=null;startHand(r);}
 function nextGame(r){if(!r.finished)throw Error('本小局尚未结束');if(r.gamesPlayed>=3){r.bigSet++;r.gamesPlayed=0;r.matchResults=[];regroupTeams(r);}startHand(r);}
-const STRONG_KINDS = new Set(['bomb', 'mixedLeg', 'pureLeg', 'king2', 'king3']);
+const STRONG_KINDS = new Set(['bomb', 'doubleBomb', 'mixedLeg', 'pureLeg', 'king2', 'king3']);
 
 function cardPoints(cards) {
   return cards.reduce((sum, c) => sum + (c.rank === 5 ? 5 : (c.rank === 10 || c.rank === 13 ? 10 : 0)), 0);
@@ -93,6 +148,20 @@ function botCandidates(r, seat) {
       if (seq.length >= 3) {
         add(seq.map((x) => groups.get(x)[0]));
         if (seq.every((x) => groups.get(x).length >= 2)) add(seq.flatMap((x) => groups.get(x).slice(0, 2)));
+      }
+    }
+  }
+  // 双炸弹：仅当上家出双炸弹时，枚举两副炸弹的组合（需分别压住上家两副炸弹）
+  if (lead && lead.kind === 'doubleBomb') {
+    const entries = [...groups.entries()].filter(([rank, g]) => rank >= 5 && rank <= 15 && g.length >= 3);
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const g1 = entries[i][1], g2 = entries[j][1];
+        for (let n1 = 3; n1 <= g1.length; n1++) {
+          for (let n2 = 3; n2 <= g2.length; n2++) {
+            add([...g1.slice(0, n1), ...g2.slice(0, n2)]);
+          }
+        }
       }
     }
   }
