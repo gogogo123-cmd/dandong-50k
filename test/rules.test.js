@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { classify, beats, trump, passTurn, awardTrick, finishCard } = require('../src/rules');
+const { classify, beats, trump, passTurn, awardTrick, finishCard, regroupTeams } = require('../src/rules');
 
 function baseRoom() {
   const players = Array.from({ length: 6 }, (_, i) => ({
@@ -148,4 +148,16 @@ test('双炸弹：王/腿不作为组件；连对本身不会被识别成双炸�
     { id: `q${rank}a`, rank, suit: 0 }, { id: `q${rank}b`, rank, suit: 1 },
   ];
   assert.equal(classify([...pairs(6), ...pairs(7), ...pairs(8), ...pairs(9)]).kind, 'doubleStraight');
+});
+
+test('随机分组：同队玩家不相邻且红蓝各 3 人', () => {
+  for (let round = 0; round < 50; round++) {
+    const r = { players: Array(6).fill(null), teams: [], positions: [], log: [] };
+    regroupTeams(r);
+    assert.equal(r.teams.filter((t) => t === 0).length, 3);
+    assert.equal(r.teams.filter((t) => t === 1).length, 3);
+    for (let i = 0; i < 6; i++) {
+      assert.notEqual(r.teams[i], r.teams[(i + 1) % 6], `第 ${round} 次分组：${i} 与 ${(i + 1) % 6} 号位同队`);
+    }
+  }
 });
