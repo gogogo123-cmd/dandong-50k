@@ -274,7 +274,7 @@ function describe(cards) {
   if (n >= 6 && counts.size === 2 && [...counts.entries()].every(([r, v]) => r >= 5 && r <= 15 && v >= 3)) return '双炸弹';
   if (n >= 6 && n % 2 === 0 && [...counts.values()].every((v) => v === 2)) {
     const q = [...counts.keys()].sort((a, b) => a - b);
-    if (q.every((x, i) => x >= 5 && x <= 14 && (!i || x === q[i - 1] + 1))) return '双顺';
+    if (q.every((x, i) => x >= 5 && x <= 14 && (!i || x === q[i - 1] + 1))) return '连对';
   }
   if (n >= 3 && counts.size === n) {
     const q = [...ranks].sort((a, b) => a - b);
@@ -319,28 +319,17 @@ function getType(cards) {
 function bombBeatsType(a, b) {
   return a.n > b.n || (a.n === b.n && a.power > b.power);
 }
-function sortBombs(list) {
-  return list.slice().sort((a, b) => a.n - b.n || a.power - b.power);
-}
-function doubleBombsBeat(a, b) {
-  const A = sortBombs(a.bombs || []), B = sortBombs(b.bombs || []);
-  return A.length === B.length && A.every((x, i) => bombBeatsType(x, B[i]));
-}
-function bigBombBeatsDouble(a, b) {
-  for (let k = 3; k <= a.n - 3; k++) {
-    if (doubleBombsBeat({ bombs: [{ n: k, power: a.power }, { n: a.n - k, power: a.power }] }, b)) return true;
-  }
-  return false;
-}
 function canBeat(a, b) {
   if (!a) return false;
   if (!b) return true;
-  if (b.kind === 'doubleBomb') {
-    if (a.kind === 'doubleBomb') return doubleBombsBeat(a, b);
-    if (a.kind === 'bomb') return a.n >= 6 && bigBombBeatsDouble(a, b);
+  // 连对：只能被更大的连对、两副炸弹齐出、6张及以上单炸弹（可拆成两副炸弹）、腿或双王/三王管
+  if (b.kind === 'doubleStraight') {
+    if (a.kind === 'doubleStraight') return a.n === b.n && a.power > b.power;
+    if (a.kind === 'doubleBomb') return true;
+    if (a.kind === 'bomb') return a.n >= 6;
     return ['mixedLeg', 'pureLeg', 'king2', 'king3'].includes(a.kind);
   }
-  if (a.kind === 'doubleBomb') return false;
+  if (a.kind === 'doubleBomb' || b.kind === 'doubleBomb') return false;
   if (a.kind !== b.kind) {
     if (a.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(b.kind)) return true;
     if (b.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(a.kind)) return false;
@@ -431,8 +420,8 @@ function buildHints(s) {
   }
   flushSeq();
 
-  // 双炸弹：上家出双炸弹时，枚举两副炸弹的组合（需分别压住上家两副炸弹）
-  if (target && target.kind === 'doubleBomb') {
+  // 双炸弹：上家出连对时，枚举两副炸弹齐出的组合
+  if (target && target.kind === 'doubleStraight') {
     const groups = [...byRank.entries()].filter(([r, g]) => r >= 5 && r <= 15 && g.length >= 3);
     for (let i = 0; i < groups.length; i++) {
       for (let j = i + 1; j < groups.length; j++) {
@@ -701,7 +690,7 @@ function render(s) {
 
   const chosen = (s.hand || []).filter((c) => selection.has(c.id));
   const type = getType(chosen);
-  const canPlayNow = !!(type && canBeat(type, target));
+  const canPlayNow = !!(type && canBeat(type, target) && (target || type.kind !== 'doubleBomb'));
   $('#playCards').disabled = busy() || !myTurn || !canPlayNow;
   $('#passTurn').disabled = busy() || !myTurn || !target;
   $('#hint').disabled = busy() || !myTurn;

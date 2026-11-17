@@ -14,7 +14,7 @@ function classify(cards) {
     return { kind: pure ? 'pureLeg' : 'mixedLeg', n, power: pure ? suitPower[ss[0]] : 0 };
   }
   if (n >= 3 && counts.size === 1) return { kind: 'bomb', n, power: rs[0] };
-  // 双炸弹：两副普通点数炸弹一起出（王/腿不算炸弹组件）
+  // 双炸弹：两副普通点数炸弹一起出（用于管连对；王/腿不算炸弹组件，也不能领出）
   if (n >= 6 && counts.size === 2 && [...counts.entries()].every(([r, v]) => r >= 5 && r <= 15 && v >= 3)) {
     const bombs = [...counts.entries()].map(([r, v]) => ({ n: v, power: r }));
     return { kind: 'doubleBomb', n, bombs };
@@ -31,28 +31,18 @@ function classify(cards) {
   return null;
 }
 function bombBeats(a, b) { return a.n > b.n || (a.n === b.n && a.power > b.power); }
-function sortBombs(list) { return list.slice().sort((a, b) => a.n - b.n || a.power - b.power); }
-function doubleBombsBeat(a, b) {
-  const A = sortBombs(a.bombs || []), B = sortBombs(b.bombs || []);
-  return A.length === B.length && A.every((x, i) => bombBeats(x, B[i]));
-}
-// 6张及以上的炸弹可拆成两副炸弹：存在一种拆分能分别压住上家两副炸弹即可
-function bigBombBeatsDouble(a, b) {
-  for (let k = 3; k <= a.n - 3; k++) {
-    if (doubleBombsBeat({ bombs: [{ n: k, power: a.power }, { n: a.n - k, power: a.power }] }, b)) return true;
-  }
-  return false;
-}
 const trump = (k) => ({ single: 0, pair: 0, triple: 0, straight: 0, doubleStraight: 0, bomb: 1, doubleBomb: 1.5, mixedLeg: 2, king2: 3, pureLeg: 4, king3: 5 }[k] ?? -1);
 function beats(a, b) {
   if (!a) return false;
   if (!b) return true;
-  if (b.kind === 'doubleBomb') {
-    if (a.kind === 'doubleBomb') return doubleBombsBeat(a, b);
-    if (a.kind === 'bomb') return a.n >= 6 && bigBombBeatsDouble(a, b);
+  // 连对：只能被更大的连对、两副炸弹齐出、6张及以上单炸弹（可拆成两副炸弹）、腿或双王/三王管
+  if (b.kind === 'doubleStraight') {
+    if (a.kind === 'doubleStraight') return a.n === b.n && a.power > b.power;
+    if (a.kind === 'doubleBomb') return true;
+    if (a.kind === 'bomb') return a.n >= 6;
     return ['mixedLeg', 'pureLeg', 'king2', 'king3'].includes(a.kind);
   }
-  if (a.kind === 'doubleBomb') return false;
+  if (a.kind === 'doubleBomb' || b.kind === 'doubleBomb') return false;
   if (a.kind !== b.kind) {
     if (a.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(b.kind)) return true;
     if (b.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(a.kind)) return false;
@@ -151,8 +141,8 @@ function botCandidates(r, seat) {
       }
     }
   }
-  // 双炸弹：仅当上家出双炸弹时，枚举两副炸弹的组合（需分别压住上家两副炸弹）
-  if (lead && lead.kind === 'doubleBomb') {
+  // 双炸弹：仅当上家出连对时，枚举两副炸弹齐出的组合
+  if (lead && lead.kind === 'doubleStraight') {
     const entries = [...groups.entries()].filter(([rank, g]) => rank >= 5 && rank <= 15 && g.length >= 3);
     for (let i = 0; i < entries.length; i++) {
       for (let j = i + 1; j < entries.length; j++) {

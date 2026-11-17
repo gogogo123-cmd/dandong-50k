@@ -100,51 +100,52 @@ test('pass marks the seat; award and play reset marks', () => {
   assert.deepEqual(r.passed, Array(6).fill(false));
 });
 
-test('双炸弹：两个炸弹一起出，须两个炸弹分别压住；单炸弹不能管', () => {
+
+test('连对：单炸弹不能管，需两副炸弹齐出/6张以上炸弹/腿/双王', () => {
   const bomb = (rank, n = 3) => Array.from({ length: n }, (_, i) => ({ id: `b${rank}-${i}`, rank, suit: i % 4 }));
-  const lead = classify([...bomb(8), ...bomb(9)]);
-  assert.equal(lead.kind, 'doubleBomb');
-  assert.deepEqual(lead.bombs, [{ n: 3, power: 8 }, { n: 3, power: 9 }]);
+  const pairs = (rank) => [
+    { id: `p${rank}a`, rank, suit: 0 }, { id: `p${rank}b`, rank, suit: 1 },
+  ];
+  const lead = classify([...pairs(7), ...pairs(8), ...pairs(9)]); // 778899
+  assert.equal(lead.kind, 'doubleStraight');
+  assert.equal(lead.n, 6);
 
-  assert.equal(beats(classify(bomb(10)), lead), false, '一个炸弹不能管双炸弹');
-  assert.equal(beats(classify([...bomb(10), ...bomb(11)]), lead), true, '两个更大炸弹分别压住');
-  assert.equal(beats(classify([...bomb(10), ...bomb(7)]), lead), false, '一大一小无法分别压住');
-  assert.equal(beats(classify([...bomb(9), ...bomb(10)]), lead), true, '同点数炸弹按升级压');
+  assert.equal(beats(classify(bomb(10)), lead), false, '一个炸弹不能管连对');
+  assert.equal(beats(classify(bomb(10, 5)), lead), false, '5张炸弹不能管连对');
+  assert.equal(beats(classify(bomb(10, 6)), lead), true, '6张炸弹可拆成两副炸弹管连对');
+  assert.equal(beats(classify([...bomb(10), ...bomb(11)]), lead), true, '两副炸弹齐出可管连对');
+  assert.equal(beats(classify([...bomb(6), ...bomb(7)]), lead), true, '两副炸弹不看点数即可管连对');
 
-  const six = classify(bomb(12, 6));
-  assert.equal(six.kind, 'bomb');
-  assert.equal(beats(six, lead), true, '6张炸弹拆成3+3可管');
-  assert.equal(beats(classify(bomb(12, 5)), lead), false, '5张炸弹不能拆成两个炸弹');
-  assert.equal(beats(classify(bomb(8, 6)), lead), false, '拆出的3张8压不过3张8');
+  const higher = classify([...pairs(9), ...pairs(10), ...pairs(11)]);
+  assert.equal(beats(higher, lead), true, '更大的同长连对可以管');
+  const longer = classify([...pairs(9), ...pairs(10), ...pairs(11), ...pairs(12)]);
+  assert.equal(beats(longer, lead), false, '连对张数不同不能互管');
 
   const mixed = classify([
     { id: 'm5', rank: 5, suit: 0 }, { id: 'm10', rank: 10, suit: 1 }, { id: 'm13', rank: 13, suit: 2 },
   ]);
-  assert.equal(beats(mixed, lead), true, '一条腿可管双炸弹');
+  assert.equal(beats(mixed, lead), true, '一条腿可管连对');
   const king2 = classify([
     { id: 'k2a', rank: 16, suit: 4 }, { id: 'k2b', rank: 16, suit: 4 },
   ]);
-  assert.equal(beats(king2, lead), true, '双王可管双炸弹');
+  assert.equal(beats(king2, lead), true, '双王可管连对');
   const king3 = classify([
     { id: 'k3a', rank: 17, suit: 4 }, { id: 'k3b', rank: 17, suit: 4 }, { id: 'k3c', rank: 17, suit: 4 },
   ]);
-  assert.equal(beats(king3, lead), true, '三王可管双炸弹');
+  assert.equal(beats(king3, lead), true, '三王可管连对');
 
-  assert.equal(beats(classify([...bomb(10), ...bomb(11)]), classify(bomb(10))), false, '双炸弹不能压单炸弹');
-  assert.equal(beats(classify([...bomb(10), ...bomb(11)]), king2), false, '双炸弹不能压双王');
+  const twoBombs = classify([...bomb(10), ...bomb(11)]);
+  assert.equal(twoBombs.kind, 'doubleBomb');
+  assert.equal(beats(twoBombs, classify(bomb(10))), false, '双炸弹不能管单炸弹');
+  assert.equal(beats(twoBombs, king2), false, '双炸弹不能管双王');
+  assert.equal(beats(lead, twoBombs), false, '连对不能管双炸弹');
 });
 
-test('双炸弹：两副不同张数炸弹按张数/点数分别比较；王不属于炸弹组件', () => {
-  const bomb = (rank, n) => Array.from({ length: n }, (_, i) => ({ id: `c${rank}-${i}`, rank, suit: i % 4 }));
-  const lead = classify([...bomb(6, 4), ...bomb(12, 3)]);
-  assert.equal(lead.kind, 'doubleBomb');
-  const attack = classify([...bomb(7, 4), ...bomb(13, 4)]);
-  assert.equal(beats(attack, lead), true, '4张7压3张Q、4张K压4张6，可分别配对');
-  const bad = classify([...bomb(7, 3), ...bomb(13, 4)]);
-  assert.equal(beats(bad, lead), false, '3张7压不过3张Q，无法完成配对');
-  const seven = classify(bomb(13, 7));
-  assert.equal(beats(seven, lead), true, '7张K炸弹拆3+4，可分别压住两副炸弹');
-  const sixLow = classify(bomb(5, 6));
-  assert.equal(beats(sixLow, lead), false, '6张5炸弹拆出的3张压不过3张Q');
-  assert.equal(classify([...bomb(16, 4), ...bomb(8, 3)]), null, '王/腿不作为双炸弹组件');
+test('双炸弹：王/腿不作为组件；连对本身不会被识别成双炸弹', () => {
+  const bomb = (rank, n = 3) => Array.from({ length: n }, (_, i) => ({ id: `c${rank}-${i}`, rank, suit: i % 4 }));
+  assert.equal(classify([...bomb(16, 4), ...bomb(8, 3)]), null, '王不作为双炸弹组件');
+  const pairs = (rank) => [
+    { id: `q${rank}a`, rank, suit: 0 }, { id: `q${rank}b`, rank, suit: 1 },
+  ];
+  assert.equal(classify([...pairs(6), ...pairs(7), ...pairs(8), ...pairs(9)]).kind, 'doubleStraight');
 });
