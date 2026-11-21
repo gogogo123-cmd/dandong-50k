@@ -653,7 +653,8 @@ function render(s) {
 
   const myTurn = s.started && !s.finished && s.turn === seat;
   const lead = s.lead;
-  const target = lead && lead.seat !== seat ? { kind: lead.kind, power: lead.power, n: lead.n } : null;
+  // 保留完整牌型（双炸弹比较需要用 bombs），不能只留 kind/power/n。
+  const target = lead && lead.seat !== seat ? lead : null;
   const current = s.players?.[s.turn];
 
   if (!s.started) {
