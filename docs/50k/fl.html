@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#082720">
+<title>丹东五十K · 六人局</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#071e1a}
+#fl{position:fixed;left:0;top:0;border:0;display:block;background:#071e1a}
+</style>
+</head>
+<body>
+<iframe id="fl" allow="autoplay; fullscreen" allowfullscreen></iframe>
+<script>
+(function () {
+  var f = document.getElementById('fl');
+  var target = 'index.html' + location.search + location.hash;
+  if (f.getAttribute('src') !== target) f.setAttribute('src', target);
+  function layout() {
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    if (w >= h) {
+      // 设备已横屏：正常铺满
+      f.style.transform = 'none';
+      f.style.width = w + 'px';
+      f.style.height = h + 'px';
+      f.style.left = '0px';
+      f.style.top = '0px';
+    } else {
+      // 设备竖屏：把整个游戏横过来，游戏内部仍按横屏布局运行
+      f.style.transform = 'rotate(90deg)';
+      f.style.transformOrigin = '0 0';
+      f.style.width = h + 'px';
+      f.style.height = w + 'px';
+      f.style.left = w + 'px';
+      f.style.top = '0px';
+    }
+  }
+  layout();
+  window.addEventListener('resize', layout);
+  window.addEventListener('orientationchange', function () {
+    layout();
+    setTimeout(layout, 120);
+    setTimeout(layout, 350);
+  });
+})();
+</script>
+</body>
+</html>

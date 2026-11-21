@@ -66,8 +66,17 @@ function teamName(room,team){return team===0?'红队':'蓝队';}
 // 座位即位置：1/3/5 号位为红队，2/4/6 号位为蓝队；选座即选队友/对手。
 function assignTeams(r){r.positions=[0,1,2,3,4,5];r.teams=[0,1,0,1,0,1];let red=r.teams.flatMap((t,i)=>t===0?[i+1]:[]),blue=r.teams.flatMap((t,i)=>t===1?[i+1]:[]);r.log.push(`按座位分队：红队 ${red.join('、')}号位；蓝队 ${blue.join('、')}号位`);}
 // 每 3 小局后由房主触发随机分队：座位不变，红蓝队系统随机（各 3 人）。
-// 每 3 小局后随机分甲乙队：为保证同队玩家不相邻，只有红蓝各占奇/偶号位两种方案，随机选择颜色。
-function regroupTeams(r){r.positions=[0,1,2,3,4,5];const redEven=Math.random()<0.5;r.teams=r.positions.map((_,i)=>((i%2===0)===redEven?0:1));let red=r.teams.flatMap((t,i)=>t===0?[i+1]:[]),blue=r.teams.flatMap((t,i)=>t===1?[i+1]:[]);r.log.push(`随机分组：红队 ${red.join('、')}号位；蓝队 ${blue.join('、')}号位（同队不相邻）`);}
+// 每 3 小局后随机分甲乙队：6 个座位随机抽 3 人进红队，剩下 3 人蓝队，队友不固定。
+function regroupTeams(r){
+  r.positions=[0,1,2,3,4,5];
+  const pool=[0,1,2,3,4,5];
+  for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+  const red=new Set(pool.slice(0,3));
+  r.teams=r.positions.map((_,i)=>red.has(i)?0:1);
+  const redSeats=[...red].sort((a,b)=>a-b).map((i)=>i+1);
+  const blueSeats=r.teams.flatMap((t,i)=>t===1?[i+1]:[]);
+  r.log.push(`随机分组：红队 ${redSeats.join('、')}号位；蓝队 ${blueSeats.join('、')}号位`);
+}
 function nextActive(r,from){let fromPos=r.positions?.[from]??from;for(let step=1;step<=6;step++){let pos=(fromPos+step)%6,i=r.positions?.indexOf(pos)??pos;if(!r.players[i].done){r.turn=i;return;}}r.finished=true;}
 // 接风：领出者已出完时，由顺时针下一位仍在场的同队玩家领出；找不到则按正常顺位。
 function nextTeammate(r,leader){let fromPos=r.positions?.[leader]??leader;for(let step=1;step<=6;step++){let pos=(fromPos+step)%6,i=r.positions?.indexOf(pos)??pos;if(i!==leader&&r.teams[i]===r.teams[leader]&&!r.players[i].done){r.turn=i;r.windSeq=(r.windSeq||0)+1;r.lastWind={seat:i,leader,seq:r.windSeq};r.log.push(`接风：${r.players[i].name} 接手出牌`);return true;}}return false;}

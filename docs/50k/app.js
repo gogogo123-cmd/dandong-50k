@@ -25,6 +25,8 @@ let actionWatchdog = null;
 let hintIndex = -1;
 let hintKey = '';
 let hintBreaks = 0;
+let peekOpen = false;
+let peekSeat = null;
 let muted = false;
 let warnedDeadline = null;
 let audioCtx = null;
@@ -612,6 +614,26 @@ function cardStackHTML(count) {
   return `<span class="card-stack">${layers}</span>`;
 }
 
+function renderPeek(s) {
+  const list = (s.teammateHands || []).filter((x) => x && Number.isInteger(x.seat));
+  const btn = $('#peekTeammate');
+  if (btn) btn.style.display = list.length ? '' : 'none';
+  const modal = $('#peekModal');
+  if (!modal) return;
+  if (!peekOpen || !list.length) {
+    if (peekOpen && !list.length) { peekOpen = false; peekSeat = null; }
+    modal.style.display = 'none';
+    return;
+  }
+  if (!list.some((x) => x.seat === peekSeat)) peekSeat = list[0].seat;
+  const cur = list.find((x) => x.seat === peekSeat);
+  modal.style.display = 'grid';
+  $('#peekTabs').innerHTML = list.map((x) => `<button type="button" class="peek-tab${x.seat === peekSeat ? ' active' : ''}" data-peek-seat="${x.seat}">${esc(x.name)}</button>`).join('');
+  $('#peekHand').innerHTML = cur
+    ? arrangeHand(cur.hand || []).map((c) => cardHTML(c)).join('')
+    : '<div class="peek-empty">队友已出完，暂无手牌可看</div>';
+}
+
 function render(s) {
   if (!s) return;
   state = s;
@@ -736,6 +758,7 @@ function render(s) {
   $('#hint').disabled = busy() || !myTurn;
 
   renderProfile(s);
+  renderPeek(s);
 
   const hintText = !myTurn ? '等待其他玩家'
     : chosen.length ? `已选：${describe(chosen)}${canPlayNow ? ' · 可以出牌' : type ? ' · 压不过上家' : ' · 牌型不成立'}`
@@ -1397,6 +1420,22 @@ $('#hint').onclick = () => {
   if (hint.breaks > 0) myNotice('提示需要拆牌才能压过上家');
   render(state);
 };
+$('#peekTeammate').onclick = () => {
+  if (!state || !(state.teammateHands || []).length) return;
+  peekOpen = true;
+  peekSeat = null;
+  render(state);
+};
+$('#peekClose').onclick = () => {
+  peekOpen = false;
+  if (state) render(state);
+};
+$('#peekTabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-peek-seat]');
+  if (!b || !state) return;
+  peekSeat = Number(b.dataset.peekSeat);
+  render(state);
+});
 $('#leaveGame').onclick = () => {
   if (!state) return;
   const msg = state.started ? '退出房间？剩下的牌会由机器人接管' : '退出房间？';

@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { classify, beats, trump, passTurn, awardTrick, finishCard, regroupTeams } = require('../src/rules');
+const { createEngine } = require('../src/engine');
 
 function baseRoom() {
   const players = Array.from({ length: 6 }, (_, i) => ({
@@ -182,14 +183,40 @@ test('双炸弹：王/腿不作为组件；连对本身不会被识别成双炸�
   assert.equal(classify([...pairs(6), ...pairs(7), ...pairs(8), ...pairs(9)]).kind, 'doubleStraight');
 });
 
-test('随机分组：同队玩家不相邻且红蓝各 3 人', () => {
-  for (let round = 0; round < 50; round++) {
+test('五十K：已出完玩家只能看到同组队友的手牌', () => {
+  const engine = createEngine({ config: { TURN_SECONDS: 40 } });
+  const host = engine.createRoom('A');
+  for (const name of ['B', 'C', 'D', 'E', 'F']) engine.joinRoom(host.room.id, name);
+  const r = host.room;
+  r.started = true;
+  r.teams = [0, 1, 0, 1, 0, 1];
+  r.players[0].done = true;
+  r.players[0].hand = [];
+  r.players[2].hand = [{ id: 't2', rank: 8, suit: 0 }];
+  r.players[4].done = true;
+  r.players[4].hand = [];
+  r.players[1].hand = [{ id: 'e1', rank: 9, suit: 1 }];
+  r.players[3].hand = [{ id: 'e3', rank: 10, suit: 1 }];
+
+  const mine = engine.publicState(r, 0);
+  assert.deepEqual(mine.teammateHands.map((x) => x.seat), [2], '只下发仍在对局的同组队友');
+  assert.equal(mine.teammateHands[0].hand[0].rank, 8);
+
+  assert.deepEqual(engine.publicState(r, 2).teammateHands, [], '未出完的玩家不能看队友手牌');
+  assert.deepEqual(engine.publicState(r, 1).teammateHands, [], '对手视角不包含任何队友手牌');
+});
+
+test('随机分组：红蓝各 3 人，且队友组合不固定', () => {
+  const patterns = new Set();
+  for (let round = 0; round < 60; round++) {
     const r = { players: Array(6).fill(null), teams: [], positions: [], log: [] };
     regroupTeams(r);
     assert.equal(r.teams.filter((t) => t === 0).length, 3);
     assert.equal(r.teams.filter((t) => t === 1).length, 3);
-    for (let i = 0; i < 6; i++) {
-      assert.notEqual(r.teams[i], r.teams[(i + 1) % 6], `第 ${round} 次分组：${i} 与 ${(i + 1) % 6} 号位同队`);
-    }
+    assert.deepEqual(r.positions, [0, 1, 2, 3, 4, 5]);
+    patterns.add(r.teams.join(''));
   }
+  assert.ok(patterns.size > 2, `分组应随机变化，实际只有 ${patterns.size} 种`);
+  const parityOnly = [...patterns].every((p) => p === '010101' || p === '101010');
+  assert.equal(parityOnly, false, '不能只按奇偶号位固定分队');
 });

@@ -134,6 +134,13 @@ function createEngine({ config, store }) {
     if (r.game === 'baohuang') {
       return baohuang.publicState(r, seat, { isOnline, config, canStart });
     }
+    const me = r.players[seat];
+    // 已出完的玩家可私密查看同组仍未出完队友的手牌；对手手牌永不下发。
+    const teammateHands = me && me.done && r.started && !r.finished
+      ? r.players.flatMap((tp, i) => (tp && i !== seat && !tp.done && r.teams[i] === r.teams[seat])
+        ? [{ seat: i, name: tp.name, hand: tp.hand.map((c) => ({ ...c })) }]
+        : [])
+      : [];
     return {
       id: r.id,
       players: r.players.map((p, i) => p && ({
@@ -151,6 +158,7 @@ function createEngine({ config, store }) {
       positions: r.positions,
       yourSeat: seat,
       hand: r.players[seat]?.hand || [],
+      teammateHands,
       turn: r.turn,
       lead: r.lead,
       passes: r.passes,
