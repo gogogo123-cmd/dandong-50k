@@ -206,17 +206,24 @@ test('五十K：已出完玩家只能看到同组队友的手牌', () => {
   assert.deepEqual(engine.publicState(r, 1).teammateHands, [], '对手视角不包含任何队友手牌');
 });
 
-test('随机分组：红蓝各 3 人，且队友组合不固定', () => {
+test('随机分组：同队隔位不相邻，且队友组合随机', () => {
   const patterns = new Set();
-  for (let round = 0; round < 60; round++) {
+  for (let round = 0; round < 80; round++) {
     const r = { players: Array(6).fill(null), teams: [], positions: [], log: [] };
     regroupTeams(r);
     assert.equal(r.teams.filter((t) => t === 0).length, 3);
     assert.equal(r.teams.filter((t) => t === 1).length, 3);
-    assert.deepEqual(r.positions, [0, 1, 2, 3, 4, 5]);
+    assert.equal(new Set(r.positions).size, 6, 'positions 必须是 6 个座位的排列');
+    // 视觉牌桌一圈按位置顺序排列：位置 p 上坐的是 positions.indexOf(p)
+    const seatAt = (p) => r.positions.indexOf(p);
+    for (let p = 0; p < 6; p++) {
+      const a = r.teams[seatAt(p)];
+      const b = r.teams[seatAt((p + 1) % 6)];
+      assert.notEqual(a, b, `第 ${round} 次：位置 ${p} 与 ${(p + 1) % 6} 同队相邻`);
+    }
     patterns.add(r.teams.join(''));
   }
-  assert.ok(patterns.size > 2, `分组应随机变化，实际只有 ${patterns.size} 种`);
+  assert.ok(patterns.size > 2, `队友组合应随机变化，实际只有 ${patterns.size} 种`);
   const parityOnly = [...patterns].every((p) => p === '010101' || p === '101010');
-  assert.equal(parityOnly, false, '不能只按奇偶号位固定分队');
+  assert.equal(parityOnly, false, '不能固定按座位奇偶分队');
 });
