@@ -645,3 +645,11 @@ body.lobby-mode .lobby-hint{display:block;font-size:clamp(10px,1.6vh,13px)}
 }
 .home-back{color:var(--gold);text-decoration:none;font-size:12px;font-weight:700;border:1px solid #e9c47a66;border-radius:999px;padding:4px 10px;white-space:nowrap;line-height:1.2}
 .home-back:hover{background:#e9c47a1a}
+
+/* ===== 固定横屏：竖屏只提示，不旋转/渲染牌桌 ===== */
+.rotate-hint{display:none;position:fixed;inset:0;z-index:9999;background:radial-gradient(ellipse at 50% 35%,#155544,#071e1a 80%);color:#f5efdf;place-items:center;text-align:center;padding:24px}
+.rotate-hint .rotate-box{padding:10px}
+.rotate-hint .rotate-icon{font-size:52px;line-height:1;transform:rotate(90deg);margin-bottom:16px}
+.rotate-hint h2{color:var(--gold);margin:0 0 8px;font-size:22px;letter-spacing:.08em}
+.rotate-hint p{color:#b7cec3;font-size:13px;margin:0;line-height:1.7}
+@media (orientation:portrait){.rotate-hint{display:grid}}

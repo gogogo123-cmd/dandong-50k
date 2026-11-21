@@ -152,6 +152,25 @@ test('连对：单炸弹不能管，需两副炸弹齐出/6张以上炸弹/腿/�
   assert.equal(beats(pure, twoBombs), true, '纯五十K可以管双炸弹');
   assert.equal(beats(king2, twoBombs), true, '双王可以管双炸弹');
   assert.equal(beats(king3, twoBombs), true, '三王可以管双炸弹');
+
+  const eightNine = classify([...bomb(8), ...bomb(9)]);
+  const jackQueen = classify([...bomb(11), ...bomb(12)]);
+  assert.equal(eightNine.kind, 'doubleBomb');
+  assert.equal(jackQueen.kind, 'doubleBomb');
+  assert.equal(beats(jackQueen, eightNine), true, 'JJJQQQ 可以管 888999');
+  assert.equal(beats(eightNine, jackQueen), false, '888999 不能管 JJJQQQ');
+});
+
+test('出牌区按点数排序：连对记录为 77 88 99', () => {
+  const r = baseRoom();
+  const cards = [
+    { id: 'x7s', rank: 7, suit: 0 }, { id: 'x9s', rank: 9, suit: 0 }, { id: 'x8s', rank: 8, suit: 0 },
+    { id: 'x7h', rank: 7, suit: 1 }, { id: 'x9h', rank: 9, suit: 1 }, { id: 'x8h', rank: 8, suit: 1 },
+  ];
+  r.players[1].hand = cards.slice();
+  finishCard(r, 1, cards);
+  assert.deepEqual(r.playedBy[1].map((c) => c.rank), [7, 7, 8, 8, 9, 9]);
+  assert.deepEqual(r.lead.cards.map((c) => c.rank), [7, 7, 8, 8, 9, 9]);
 });
 
 test('双炸弹：王/腿不作为组件；连对本身不会被识别成双炸弹', () => {

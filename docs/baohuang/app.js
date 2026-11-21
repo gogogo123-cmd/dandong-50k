@@ -1321,9 +1321,11 @@ function onViewportChange() {
 }
 window.addEventListener('online', () => connect());
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { connect(); syncViewport(); }
+  if (!document.hidden) { connect(); syncViewport(); lockLandscape(); }
 });
-window.addEventListener('orientationchange', onViewportChange);
+window.addEventListener('orientationchange', () => { lockLandscape(); onViewportChange(); });
+// 部分浏览器要求用户手势后才能锁定方向，首次触摸时补一次。
+document.addEventListener('pointerdown', lockLandscape, { once: true, passive: true });
 window.addEventListener('resize', onViewportChange);
 if (window.visualViewport) window.visualViewport.addEventListener('resize', onViewportChange);
 

@@ -593,6 +593,11 @@ function playSig(cards) {
   return cards && cards.length ? cards.map((c) => c.id).join(',') : '';
 }
 
+// 出牌区按点数/花色排序展示，连对显示为 77 88 99，不按手牌选择顺序。
+function playedOrder(cards) {
+  return (cards || []).slice().sort((a, b) => a.rank - b.rank || a.suit - b.suit);
+}
+
 function busy() {
   return !!pendingAction;
 }
@@ -673,7 +678,7 @@ function render(s) {
       const holdingLead = p.done && !!s.lead;
       if (p.done && !holdingLead) play = `<div class="player-play play-done ${aura}"><span class="pass-pill done-pill">已出完</span></div>`;
       else if (!p.done && s.passed?.[i]) play = `<div class="player-play play-pass ${aura}">${timer}<span class="pass-pill">不要</span></div>`;
-      else if (p.lastPlay?.length) play = `<div class="player-play ${aura}">${timer}${p.lastPlay.map((c) => cardHTML(c, false, animate)).join('')}</div>`;
+      else if (p.lastPlay?.length) play = `<div class="player-play ${aura}">${timer}${playedOrder(p.lastPlay).map((c) => cardHTML(c, false, animate)).join('')}</div>`;
       else if (active) play = `<div class="player-play play-turn ${aura}">${timer}</div>`;
     }
     return `<div class="player-seat spot-${rel} ${active ? 'active' : ''} ${p.team === '蓝队' ? 'team-blue' : 'team-red'}${isMe ? ' is-me' : ''}" data-seat="${i}"><div class="seat-head"><div class="avatar">${avatar}</div><span class="seat-name">${esc(p.name)}${host}</span></div><div class="seat-meta">${meta}</div>${play}</div>`;
@@ -692,7 +697,7 @@ function render(s) {
     const myAnimate = !!mySig && mySig !== prevSigs[`me:${seat}`];
     myPlayEl.innerHTML = myDone && !myHoldingLead
       ? '<span class="pass-pill done-pill">已出完</span>'
-      : myPass ? '<span class="pass-pill">不要</span>' : (mine || []).map((c) => cardHTML(c, false, myAnimate)).join('');
+      : myPass ? '<span class="pass-pill">不要</span>' : playedOrder(mine).map((c) => cardHTML(c, false, myAnimate)).join('');
   } else {
     myPlayEl.style.display = 'none';
     myPlayEl.innerHTML = '';
@@ -1434,11 +1439,14 @@ function onViewportChange() {
 
 window.addEventListener('online', () => connectWS());
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { connectWS(); syncViewport(); }
+  if (!document.hidden) { connectWS(); syncViewport(); lockLandscape(); }
 });
 window.addEventListener('orientationchange', () => {
+  lockLandscape();
   onViewportChange();
 });
+// 部分浏览器要求用户手势后才能锁定方向，首次触摸时补一次。
+document.addEventListener('pointerdown', lockLandscape, { once: true, passive: true });
 window.addEventListener('resize', onViewportChange);
 if (window.visualViewport) window.visualViewport.addEventListener('resize', onViewportChange);
 
