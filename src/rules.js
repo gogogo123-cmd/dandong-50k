@@ -31,10 +31,20 @@ function classify(cards) {
   return null;
 }
 function bombBeats(a, b) { return a.n > b.n || (a.n === b.n && a.power > b.power); }
+function sortBombs(list) { return list.slice().sort((a, b) => a.n - b.n || a.power - b.power); }
+function doubleBombsBeat(a, b) {
+  const A = sortBombs(a.bombs || []), B = sortBombs(b.bombs || []);
+  return A.length === B.length && A.every((x, i) => bombBeats(x, B[i]));
+}
 const trump = (k) => ({ single: 0, pair: 0, triple: 0, straight: 0, doubleStraight: 0, bomb: 1, doubleBomb: 1.5, mixedLeg: 2, king2: 3, pureLeg: 4, king3: 5 }[k] ?? -1);
 function beats(a, b) {
   if (!a) return false;
   if (!b) return true;
+  // 双炸弹：更大的双炸弹、五十K（杂/纯）、双王/三王可以管；普通炸弹不行
+  if (b.kind === 'doubleBomb') {
+    if (a.kind === 'doubleBomb') return doubleBombsBeat(a, b);
+    return ['mixedLeg', 'pureLeg', 'king2', 'king3'].includes(a.kind);
+  }
   // 连对：只能被更大的连对、两副炸弹齐出、6张及以上单炸弹（可拆成两副炸弹）、腿或双王/三王管
   if (b.kind === 'doubleStraight') {
     if (a.kind === 'doubleStraight') return a.n === b.n && a.power > b.power;
@@ -42,7 +52,7 @@ function beats(a, b) {
     if (a.kind === 'bomb') return a.n >= 6;
     return ['mixedLeg', 'pureLeg', 'king2', 'king3'].includes(a.kind);
   }
-  if (a.kind === 'doubleBomb' || b.kind === 'doubleBomb') return false;
+  if (a.kind === 'doubleBomb') return false;
   if (a.kind !== b.kind) {
     if (a.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(b.kind)) return true;
     if (b.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(a.kind)) return false;
@@ -142,8 +152,8 @@ function botCandidates(r, seat) {
       }
     }
   }
-  // 双炸弹：仅当上家出连对时，枚举两副炸弹齐出的组合
-  if (lead && lead.kind === 'doubleStraight') {
+  // 双炸弹：仅当上家出连对或双炸弹时，枚举两副炸弹齐出的组合
+  if (lead && (lead.kind === 'doubleStraight' || lead.kind === 'doubleBomb')) {
     const entries = [...groups.entries()].filter(([rank, g]) => rank >= 5 && rank <= 15 && g.length >= 3);
     for (let i = 0; i < entries.length; i++) {
       for (let j = i + 1; j < entries.length; j++) {

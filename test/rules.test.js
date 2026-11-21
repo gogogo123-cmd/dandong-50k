@@ -139,6 +139,19 @@ test('连对：单炸弹不能管，需两副炸弹齐出/6张以上炸弹/腿/�
   assert.equal(beats(twoBombs, classify(bomb(10))), false, '双炸弹不能管单炸弹');
   assert.equal(beats(twoBombs, king2), false, '双炸弹不能管双王');
   assert.equal(beats(lead, twoBombs), false, '连对不能管双炸弹');
+
+  const biggerBombs = classify([...bomb(12), ...bomb(13)]);
+  assert.equal(beats(biggerBombs, twoBombs), true, '更大的双炸弹可以管双炸弹');
+  assert.equal(beats(twoBombs, biggerBombs), false, '较小的双炸弹不能管更大的双炸弹');
+  assert.equal(beats(classify(bomb(12, 6)), twoBombs), false, '单炸弹不能管双炸弹');
+  assert.equal(beats(mixed, twoBombs), true, '杂五十K可以管双炸弹');
+  const pure = classify([
+    { id: 'q5', rank: 5, suit: 2 }, { id: 'q10', rank: 10, suit: 2 }, { id: 'q13', rank: 13, suit: 2 },
+  ]);
+  assert.equal(pure.kind, 'pureLeg');
+  assert.equal(beats(pure, twoBombs), true, '纯五十K可以管双炸弹');
+  assert.equal(beats(king2, twoBombs), true, '双王可以管双炸弹');
+  assert.equal(beats(king3, twoBombs), true, '三王可以管双炸弹');
 });
 
 test('双炸弹：王/腿不作为组件；连对本身不会被识别成双炸弹', () => {

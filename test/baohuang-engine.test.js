@@ -399,6 +399,29 @@ test('给风超时：给风者已出完仍会自动给风；机器人皇帝优�
   assert.equal(r2.lastWind.seat, 2, '机器人皇帝优先给侍卫');
 });
 
+test('跟牌超时不自动过牌，必须玩家自己点不要', () => {
+  const r = makeRoom([
+    [c(8), c(6)],
+    [c(7), c(6)],
+    [c(10), c(6)],
+    [c(11), c(6)],
+    [c(12), c(6)],
+  ], {
+    phase: 'playing',
+    emperorSeat: 0,
+    guardSeat: 1,
+    guardCardId: 'nope',
+    turn: 1,
+  });
+  r.lead = { seat: 0, kind: 'single', n: 1, power: 9, cards: [c(9, 0)], responders: 4 };
+  bh.onTimeout(r);
+  assert.equal(r.passed[1], false, '超时不会自动过牌');
+  assert.equal(r.turn, 1, '超时后仍停在当前玩家');
+  assert.ok(!r.log.some((x) => x.includes('不要')), '超时日志不出现自动不要');
+  action(r, 1, 'pass');
+  assert.equal(r.passed[1], true, '玩家手动点不要后才过牌');
+});
+
 test('过牌不准上：过牌后本轮不再轮到该玩家', () => {
   const lead = c(9, 0);
   const r = makeRoom([

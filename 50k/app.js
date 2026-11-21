@@ -38,7 +38,7 @@ let lastHandKey = '';
 
 const API_BASE = (window.DANDONG_API_BASE || '').replace(/\/+$/, '');
 const ASSET_PREFIX = window.DANDONG_ASSET_PREFIX || '../assets/';
-const FACE_V='?v=4';
+const FACE_V='?v=5';
 const jokerFaces={small:ASSET_PREFIX+'joker-small.svg'+FACE_V,big:ASSET_PREFIX+'joker-big.svg'+FACE_V};
 
 const SESSION_KEY = 'dandong50k-session';
@@ -319,9 +319,19 @@ function getType(cards) {
 function bombBeatsType(a, b) {
   return a.n > b.n || (a.n === b.n && a.power > b.power);
 }
+function sortBombsType(list) { return list.slice().sort((a, b) => a.n - b.n || a.power - b.power); }
+function doubleBombsBeatType(a, b) {
+  const A = sortBombsType(a.bombs || []), B = sortBombsType(b.bombs || []);
+  return A.length === B.length && A.every((x, i) => bombBeatsType(x, B[i]));
+}
 function canBeat(a, b) {
   if (!a) return false;
   if (!b) return true;
+  // 双炸弹：更大的双炸弹、五十K（杂/纯）、双王/三王可以管；普通炸弹不行
+  if (b.kind === 'doubleBomb') {
+    if (a.kind === 'doubleBomb') return doubleBombsBeatType(a, b);
+    return ['mixedLeg', 'pureLeg', 'king2', 'king3'].includes(a.kind);
+  }
   // 连对：只能被更大的连对、两副炸弹齐出、6张及以上单炸弹（可拆成两副炸弹）、腿或双王/三王管
   if (b.kind === 'doubleStraight') {
     if (a.kind === 'doubleStraight') return a.n === b.n && a.power > b.power;
@@ -329,7 +339,7 @@ function canBeat(a, b) {
     if (a.kind === 'bomb') return a.n >= 6;
     return ['mixedLeg', 'pureLeg', 'king2', 'king3'].includes(a.kind);
   }
-  if (a.kind === 'doubleBomb' || b.kind === 'doubleBomb') return false;
+  if (a.kind === 'doubleBomb') return false;
   if (a.kind !== b.kind) {
     if (a.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(b.kind)) return true;
     if (b.kind === 'mixedLeg' && ['bomb', 'straight', 'doubleStraight'].includes(a.kind)) return false;
@@ -370,6 +380,30 @@ function breakCostOf(cards, hand) {
   return cost;
 }
 
+// 提示不拆炸弹（3 张以上同点）、王对/王炸和五十K（纯/杂）。
+function breaksProtected(cards, hand) {
+  const total = new Map();
+  for (const c of hand) total.set(c.rank, (total.get(c.rank) || 0) + 1);
+  const used = new Map();
+  for (const c of cards) used.set(c.rank, (used.get(c.rank) || 0) + 1);
+  for (const [rank, u] of used) {
+    const t = total.get(rank) || 0;
+    if (u >= t) continue;
+    if (rank >= 16 ? t >= 2 : t >= 3) return true;
+  }
+  for (let suit = 0; suit < 4; suit++) {
+    const has = [5, 10, 13].every((r) => hand.some((c) => c.rank === r && c.suit === suit));
+    if (!has) continue;
+    const n = cards.filter((c) => c.suit === suit && (c.rank === 5 || c.rank === 10 || c.rank === 13)).length;
+    if (n > 0 && n < 3) return true;
+  }
+  if ([5, 10, 13].every((r) => (total.get(r) || 0) > 0)) {
+    const usedRanks = [5, 10, 13].filter((r) => (used.get(r) || 0) > 0).length;
+    if (usedRanks > 0 && usedRanks < 3) return true;
+  }
+  return false;
+}
+
 function buildHints(s) {
   const hand = s.hand || [];
   const target = s.lead && s.lead.seat !== seat ? s.lead : null;
@@ -381,6 +415,7 @@ function buildHints(s) {
     if (seen.has(key)) return;
     const type = getType(cs);
     if (!type || !canBeat(type, target)) return;
+    if (breaksProtected(cs, hand)) return;
     seen.add(key);
     out.push({ cards: cs, type, breaks: breakCostOf(cs, hand), sum: cs.reduce((x, c) => x + c.rank, 0) });
   };
@@ -420,8 +455,8 @@ function buildHints(s) {
   }
   flushSeq();
 
-  // 双炸弹：上家出连对时，枚举两副炸弹齐出的组合
-  if (target && target.kind === 'doubleStraight') {
+  // 双炸弹：上家出连对或双炸弹时，枚举两副炸弹齐出的组合
+  if (target && (target.kind === 'doubleStraight' || target.kind === 'doubleBomb')) {
     const groups = [...byRank.entries()].filter(([r, g]) => r >= 5 && r <= 15 && g.length >= 3);
     for (let i = 0; i < groups.length; i++) {
       for (let j = i + 1; j < groups.length; j++) {
@@ -1342,7 +1377,9 @@ $('#hint').onclick = () => {
   const hints = buildHints(state);
   if (!hints.length) {
     hintBreaks = 0;
-    myNotice('没有能压过上家的牌，要不起');
+    myNotice(state.lead && state.lead.seat !== seat
+      ? '提示不会拆炸弹/五十K；可手动选牌强压或不出'
+      : '没有可出的牌');
     return;
   }
   const cur = [...selection].sort().join(',');

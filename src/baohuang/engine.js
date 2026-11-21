@@ -764,11 +764,8 @@ function botPlay(r) {
 function autoPlay(r, prefix) {
   const seat = r.turn;
   const lead = r.lead && r.lead.seat !== seat ? r.lead : null;
-  if (lead) {
-    r.log.push(`${prefix}${seatName(r, seat)} 不要`);
-    doPass(r, seat);
-    return;
-  }
+  // 跟牌超时不自动过牌：压不过也必须由玩家自己点“不要”。
+  if (lead) return;
   const p = r.players[seat];
   const playable = p.hand.filter((c) => c.rank !== RANK_SIX || p.hand.length === 1);
   if (!playable.length) return;

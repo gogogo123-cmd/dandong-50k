@@ -3,7 +3,7 @@
 (function () {
   const API_BASE = (window.DANDONG_API_BASE || '').replace(/\/+$/, '');
   const ASSET_PREFIX = window.DANDONG_ASSET_PREFIX || '/assets/';
-  const FACE_V = '?v=4';
+  const FACE_V = '?v=5';
   const jokerFaces = {
     small: ASSET_PREFIX + 'joker-small.svg' + FACE_V,
     big: ASSET_PREFIX + 'joker-big.svg' + FACE_V,

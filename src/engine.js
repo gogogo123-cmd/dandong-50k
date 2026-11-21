@@ -471,7 +471,7 @@ function createEngine({ config, store }) {
       const move = classify(cards);
       if (!move) throw new GameError('bad-cards', '牌型不符合规则，请重新选牌', 400);
       const target = r.lead && r.lead.seat !== seat ? r.lead : null;
-      if (!target && move.kind === 'doubleBomb') throw new GameError('bad-cards', '双炸弹只能用来管连对，不能领出', 400);
+      if (!target && move.kind === 'doubleBomb') throw new GameError('bad-cards', '双炸弹只能用来管连对或双炸弹，不能领出', 400);
       if (!beats(move, target)) throw new GameError('cannot-beat', '这手牌压不过上家', 400);
       finishCard(r, seat, cards);
       return afterMutation(r);

@@ -605,16 +605,6 @@ function playedCardsHTML(s, cards, opts = {}) {
   return (cards || []).map((c) => cardHTMLForState(s, c, { ...opts, extraClass: bomb ? 'bomb-card' : undefined })).join('');
 }
 
-function cardStackHTML(count) {
-  const n = Math.max(0, Math.min(16, Math.ceil((Number(count) || 0) * 0.7)));
-  if (!n) return '';
-  let layers = '';
-  for (let k = 0; k < n; k++) {
-    layers += `<i style="transform:translate(${(k * 0.6).toFixed(1)}px,${(-k * 1.0).toFixed(1)}px)"></i>`;
-  }
-  return `<span class="card-stack">${layers}</span>`;
-}
-
 function renderPlayers(s) {
   const prevSigs = lastPlaySigs || {};
   const nextSigs = {};
@@ -623,7 +613,7 @@ function renderPlayers(s) {
     const rel = (i - seat + 5) % 5;
     const active = s.actorSeat === i;
     const roleCls = p.emperor ? 'team-emperor' : (p.guard ? 'team-guard' : '');
-    const avatar = `${p.bot ? '机' : DD.esc((p.name || '玩家').slice(0, 1))}${s.started && !p.done ? cardStackHTML(p.count) : ''}`;
+    const avatar = `${p.bot ? '机' : DD.esc((p.name || '玩家').slice(0, 1))}`;
     const psig = p.lastPlay && p.lastPlay.length ? p.lastPlay.map((c) => c.id).join(',') : '';
     nextSigs[i] = psig;
     const animate = psig && psig !== prevSigs[i];
@@ -631,7 +621,7 @@ function renderPlayers(s) {
     const rankTag = p.rank ? `<i class="seat-rank">${RANK_NAME[p.rank - 1]}</i>` : '';
     const roleTag = p.emperor ? '皇帝' : p.guard ? '侍卫' : (s.guardPublic ? '革命党' : '身份未知');
     const roleClsAttr = p.emperor || p.guard || s.guardPublic ? '' : ' class="role-unknown"';
-    const meta = `${online}${p.count}张 · <span${roleClsAttr}>${roleTag}</span>${rankTag}`;
+    const meta = `${online}<span${roleClsAttr}>${roleTag}</span>${rankTag}`;
     let play = '';
     if (s.started && !s.finished) {
       const timer = active ? '<span class="seat-timer go show play-timer">--</span>' : '';
@@ -951,7 +941,7 @@ function updateCountdown() {
   myTimer.classList.toggle('low', mine && low);
   if (mine) myTimer.textContent = `${sec}s`;
   myTimer.title = mine
-    ? (state.phase === 'buy6' ? '超时自动买6' : state.phase === 'emperor' ? '超时自动登基或让位' : state.phase === 'wind' ? '超时自动给风' : state.lead && state.lead.seat !== seat ? '超时自动不要' : '超时自动出最小牌')
+    ? (state.phase === 'buy6' ? '超时自动买6' : state.phase === 'emperor' ? '超时自动登基或让位' : state.phase === 'wind' ? '超时自动给风' : state.lead && state.lead.seat !== seat ? '压不过也请手动点“不要”，不会自动过牌' : '超时自动出最小牌')
     : '你的操作倒计时';
   document.querySelectorAll('#players .seat-timer').forEach((el) => {
     el.textContent = show ? `${sec}s` : '';
